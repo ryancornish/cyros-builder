@@ -1,0 +1,14 @@
+name = "sim"
+default_toolchain = "gcc-debug"
+
+[build]
+port = "boost"
+time_driver = "simulation"
+config = "config/sim.hpp"
+
+[features]
+tests = true
+assertions = true
+
+[output]
+root = "out"

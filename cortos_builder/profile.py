@@ -1,6 +1,7 @@
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
-import tomllib
+from cortos_builder.project import profiles_dir
 
 
 @dataclass(frozen=True)
@@ -97,3 +98,13 @@ def load_profile(path: Path) -> Profile:
    )
 
    return profile
+
+def find_profiles(root: Path | None = None) -> list[Path]:
+    directory = profiles_dir(root)
+    if not directory.is_dir():
+        return []
+
+    return sorted(
+        p for p in directory.iterdir()
+        if p.is_file() and p.suffix == ".toml"
+    )

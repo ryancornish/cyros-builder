@@ -1,0 +1,10 @@
+name = "gcc-debug"
+extends = "gcc-base"
+
+[flags]
+common_add = ["-O0", "-g"]
+cxx_add = ["-fmodules", "-fmodules-ts"]
+
+[settings]
+debug = true
+optimization = "0"

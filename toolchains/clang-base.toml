@@ -1,0 +1,21 @@
+name = "clang-base"
+
+[tools]
+cc = "clang-23"
+cxx = "clang++-23"
+ar = "llvm-ar-23"
+asm = "clang-23"
+
+[flags]
+common = []
+c = ["-std=c23", "-Wall", "-Wextra", "-Wpedantic"]
+cxx = ["-std=c++23", "-Wall", "-Wextra", "-Wpedantic"]
+asm = []
+link = []
+
+[settings]
+family = "clang"
+debug = false
+optimization = "0"
+warnings_as_errors = false
+use_modules = true

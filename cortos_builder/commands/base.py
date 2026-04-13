@@ -17,6 +17,14 @@ class Command(ABC):
 
 
 # Generic arguments
+def add_root_arg(parser: ArgumentParser, *, required: bool = False) -> None:
+   parser.add_argument(
+      "--root",
+      type=Path,
+      required=required,
+      help="Path to the CoRTOS project root. Defaults to the current working directory.",
+   )
+
 def add_profile_arg(parser: ArgumentParser, *, required: bool = False) -> None:
    parser.add_argument(
       "-p", "--profile",

@@ -7,6 +7,7 @@ from cortos_builder.output import compile_db_path
 from cortos_builder.resolve import resolve_profile_and_toolchain
 from cortos_builder.actions import CompileAction
 from cortos_builder.planner import plan_build
+from cortos_builder.include_tree import populate_include_tree
 
 
 class GenDbCommand(Command):
@@ -37,6 +38,12 @@ class GenDbCommand(Command):
          print(f"Failed to resolve invocation: {exc}")
          return 1
 
+      try:
+         populate_include_tree(resolved)
+      except Exception as exc:
+         print(f"Failed to populate include tree: {exc}")
+         return 1
+
       out_path = args.output.resolve() if args.output else compile_db_path(resolved)
 
       try:
@@ -50,10 +57,10 @@ class GenDbCommand(Command):
 
       if args.activate:
          try:
-               activate_compile_commands(resolved.project_root, out_path)
+            activate_compile_commands(resolved.project_root, out_path)
          except Exception as exc:
-               print(f"Failed to activate compile database: {exc}")
-               return 1
+            print(f"Failed to activate compile database: {exc}")
+            return 1
          print(f"Activated compile database: {resolved.project_root / 'compile_commands.json'}")
 
       return 0

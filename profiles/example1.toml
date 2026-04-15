@@ -11,4 +11,5 @@ tests = true
 assertions = true
 
 [output]
-root = "out"
+root = "../bld"
+archive = "cortos.a"

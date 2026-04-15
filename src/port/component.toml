@@ -1,0 +1,10 @@
+name = "port"
+description = "Low-level port layer"
+
+dependencies = []
+
+public_modules = []
+private_modules = []
+
+source_roots = ["boost"]
+generated_includes = true

@@ -1,0 +1,10 @@
+name = "kernel"
+description = "Public microkernel API and private kernel implementation"
+
+dependencies = ["port"]
+
+public_modules = ["cortos.kernel"]
+private_modules = ["cortos.kernel.scheduler", "cortos.kernel.wait_core"]
+
+source_roots = ["."]
+generated_includes = true

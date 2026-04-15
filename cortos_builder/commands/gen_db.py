@@ -5,6 +5,8 @@ from cortos_builder.commands.base import Command, add_profile_arg, add_root_arg,
 from cortos_builder.compdb import CompileCommand, activate_compile_commands, write_compile_commands
 from cortos_builder.output import compile_db_path
 from cortos_builder.resolve import resolve_profile_and_toolchain
+from cortos_builder.actions import CompileAction
+from cortos_builder.planner import plan_build
 
 
 class GenDbCommand(Command):
@@ -57,31 +59,21 @@ class GenDbCommand(Command):
       return 0
 
    def _generate_compile_commands(self, resolved) -> list[CompileCommand]:
-      """
-      Temporary stub generator.
+      actions = plan_build(resolved)
 
-      For now, emit one synthetic command for the profile's config header.
-      This proves the plumbing works. Later this should come from the real
-      build graph/planner.
-      """
-      tc = resolved.toolchain
-      profile = resolved.profile
-      root = resolved.project_root
+      commands: list[CompileCommand] = []
 
-      # This is deliberately a stub. Replace later with planner output.
-      return [
-         CompileCommand(
-               directory=root,
-               file=profile.build.config,
-               arguments=(
-                  tc.tools.cxx,
-                  *tc.flags.common,
-                  *tc.flags.cxx,
-                  "-c",
-                  str(profile.build.config),
-                  "-o",
-                  str(root / "build" / "stub.o"),
-               ),
-               output=root / "build" / "stub.o",
+      for action in actions:
+         if not isinstance(action, CompileAction):
+            continue
+
+         commands.append(
+            CompileCommand(
+               directory=resolved.project_root,
+               file=action.source,
+               arguments=action.arguments,
+               output=action.output,
+            )
          )
-      ]
+
+      return commands

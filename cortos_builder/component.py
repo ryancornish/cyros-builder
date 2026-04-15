@@ -82,6 +82,11 @@ def load_components(root: Path | None = None) -> dict[str, Component]:
    _validate_component_dependencies(components)
    return components
 
+def collect_public_modules(components: dict[str, Component]) -> tuple[str, ...]:
+   modules: list[str] = []
+   for name in sorted(components):
+      modules.extend(components[name].public_modules)
+   return tuple(modules)
 
 def _validate_component_dependencies(components: dict[str, Component]) -> None:
    for component in components.values():

@@ -1,8 +1,22 @@
 from argparse import ArgumentParser, Namespace
-from cortos_builder.commands.base import *
+
+from cortos_builder.commands.base import (
+   Command,
+   add_jobs_arg,
+   add_profile_arg,
+   add_root_arg,
+   add_toolchain_arg,
+   add_verbose_arg,
+)
+from cortos_builder.executor import execute_actions
+from cortos_builder.manifest import write_manifest
+from cortos_builder.output import manifest_path
+from cortos_builder.output import include_dir
+from cortos_builder.package import build_manifest
 from cortos_builder.planner import plan_build
 from cortos_builder.resolve import resolve_profile_and_toolchain
-from cortos_builder.executor import execute_actions
+from cortos_builder.include_tree import populate_include_tree
+
 
 class BuildCommand(Command):
    name = "build"
@@ -47,6 +61,22 @@ class BuildCommand(Command):
          execute_actions(actions, verbose=args.verbose)
       except Exception as exc:
          print(f"Build failed: {exc}")
+         return 1
+
+      try:
+         populate_include_tree(resolved)
+         print(f"Populated include tree: {include_dir(resolved)}")
+      except Exception as exc:
+         print(f"Build succeeded, but failed to populate include tree: {exc}")
+         return 1
+
+      try:
+         manifest = build_manifest(resolved)
+         out = manifest_path(resolved)
+         write_manifest(out, manifest)
+         print(f"Wrote manifest: {out}")
+      except Exception as exc:
+         print(f"Build succeeded, but failed to write manifest: {exc}")
          return 1
 
       return 0

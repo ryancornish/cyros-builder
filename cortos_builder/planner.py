@@ -2,6 +2,7 @@ from pathlib import Path
 
 from cortos_builder.actions import ArchiveAction, CompileAction
 from cortos_builder.component import load_components
+from cortos_builder.output import lib_dir, obj_dir
 from cortos_builder.resolve import ResolvedInvocation
 from cortos_builder.source_discovery import discover_component_sources
 
@@ -11,9 +12,8 @@ def plan_build(resolved: ResolvedInvocation) -> list:
    tc = resolved.toolchain
    components = load_components(root)
 
-   build_dir = resolved.profile.output.root / resolved.selected_toolchain_name
-   obj_dir = build_dir / "obj"
-   lib_dir = build_dir / "lib"
+   objects_root = obj_dir(resolved)
+   libraries_root = lib_dir(resolved)
 
    actions = []
    object_files: list[Path] = []
@@ -23,7 +23,7 @@ def plan_build(resolved: ResolvedInvocation) -> list:
       sources = discover_component_sources(component)
 
       for src in sources:
-         obj = _object_path_for(obj_dir, src.path, root, src.kind)
+         obj = _object_path_for(objects_root, src.path, root, src.kind)
          object_files.append(obj)
 
          args = _compile_args(tc, src.path, obj)
@@ -38,7 +38,7 @@ def plan_build(resolved: ResolvedInvocation) -> list:
          )
 
    if object_files:
-      archive = lib_dir / resolved.profile.output.archive
+      archive = libraries_root / resolved.profile.output.archive
       archive_args = (
          tc.tools.ar,
          "rcs",
@@ -93,7 +93,5 @@ def _compile_args(tc, source: Path, output: Path) -> tuple[str, ...]:
 
 def _object_path_for(obj_dir: Path, source: Path, project_root: Path, kind: str) -> Path:
    rel = source.resolve().relative_to(project_root.resolve())
-
-   # Avoid .cpp and .cppm colliding to the same .o path.
    suffix = ".ifc.o" if kind == "module_interface" else ".o"
    return (obj_dir / rel).with_suffix(suffix)

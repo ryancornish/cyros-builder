@@ -2,7 +2,7 @@ from pathlib import Path
 
 from cortos_builder.actions import ArchiveAction, CompileAction
 from cortos_builder.component import load_components
-from cortos_builder.output import lib_dir, obj_dir
+from cortos_builder.output import include_dir, lib_dir, obj_dir
 from cortos_builder.resolve import ResolvedInvocation
 from cortos_builder.source_discovery import discover_component_sources
 
@@ -26,15 +26,15 @@ def plan_build(resolved: ResolvedInvocation) -> list:
          obj = _object_path_for(objects_root, src.path, root, src.kind)
          object_files.append(obj)
 
-         args = _compile_args(tc, src.path, obj)
+         args = _compile_args(tc, resolved, src.path, obj)
          actions.append(
-            CompileAction(
-               source=src.path,
-               output=obj,
-               language=src.language,
-               kind=src.kind,
-               arguments=args,
-            )
+               CompileAction(
+                  source=src.path,
+                  output=obj,
+                  language=src.language,
+                  kind=src.kind,
+                  arguments=args,
+               )
          )
 
    if object_files:
@@ -47,21 +47,29 @@ def plan_build(resolved: ResolvedInvocation) -> list:
       )
       actions.append(
          ArchiveAction(
-            inputs=tuple(object_files),
-            output=archive,
-            arguments=archive_args,
+               inputs=tuple(object_files),
+               output=archive,
+               arguments=archive_args,
          )
       )
 
    return actions
 
 
-def _compile_args(tc, source: Path, output: Path) -> tuple[str, ...]:
+def _compile_args(tc, resolved: ResolvedInvocation, source: Path, output: Path) -> tuple[str, ...]:
+   generated_include_root = include_dir(resolved)
+
+   include_flags = (
+      "-I",
+      str(generated_include_root),
+   )
+
    if source.suffix.lower() == ".c":
       return (
          tc.tools.cc,
          *tc.flags.common,
          *tc.flags.c,
+         *include_flags,
          "-c",
          str(source),
          "-o",
@@ -74,6 +82,7 @@ def _compile_args(tc, source: Path, output: Path) -> tuple[str, ...]:
          asm,
          *tc.flags.common,
          *tc.flags.asm,
+         *include_flags,
          "-c",
          str(source),
          "-o",
@@ -84,6 +93,7 @@ def _compile_args(tc, source: Path, output: Path) -> tuple[str, ...]:
       tc.tools.cxx,
       *tc.flags.common,
       *tc.flags.cxx,
+      *include_flags,
       "-c",
       str(source),
       "-o",

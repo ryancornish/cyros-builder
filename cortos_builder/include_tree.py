@@ -9,9 +9,9 @@ def populate_include_tree(resolved: ResolvedInvocation) -> None:
    """
    Populate the generated include tree for the selected build.
 
-   For v1 this copies:
-   - the selected profile config header to include/cortos/config.hpp
-   - the selected port traits header to include/cortos/port_traits.h
+   Generated outputs:
+   <include_root>/cortos/config.hpp
+   <include_root>/cortos/port_traits.h
    """
    root = resolved.project_root
    out_include = include_dir(resolved) / "cortos"

@@ -1,0 +1,10 @@
+name = "libcortos"
+description = "Optional higher-level RTOS library"
+
+dependencies = ["kernel", "time"]
+
+public_modules = ["cortos", "cortos.sync"]
+private_modules = []
+
+source_roots = ["."]
+generated_includes = true

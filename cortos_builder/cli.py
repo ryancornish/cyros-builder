@@ -24,6 +24,7 @@ def build_parser() -> argparse.ArgumentParser:
       ShowCommand(),
       ListProfilesCommand(),
       ListToolchainsCommand(),
+      ListComponentsCommand(),
    ]
 
    for cmd in commands:

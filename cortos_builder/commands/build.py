@@ -1,12 +1,15 @@
 from argparse import ArgumentParser, Namespace
 from cortos_builder.commands.base import *
-
+from cortos_builder.planner import plan_build
+from cortos_builder.resolve import resolve_profile_and_toolchain
+from cortos_builder.executor import execute_actions
 
 class BuildCommand(Command):
    name = "build"
    help = "Build the full CoRTOS artifact set for the selected profile."
 
    def configure_parser(self, parser: ArgumentParser) -> None:
+      add_root_arg(parser, required=False)
       add_profile_arg(parser, required=True)
       add_toolchain_arg(parser, required=False)
       add_jobs_arg(parser)
@@ -24,15 +27,26 @@ class BuildCommand(Command):
       )
 
    def run(self, args: Namespace) -> int:
-      print(f"[build] profile={args.profile} toolchain={args.toolchain} jobs={args.jobs}")
-      print(f"[build] clean_first={args.clean_first} activate_db={args.activate_db}")
+      try:
+         resolved = resolve_profile_and_toolchain(args)
+      except Exception as exc:
+         print(f"Failed to resolve invocation: {exc}")
+         return 1
 
-      # Future:
-      # profile = ProfileLoader.load(args.profile)
-      # toolchain = ToolchainRegistry.resolve(args.toolchain or profile.default_toolchain)
-      # planner = BuildPlanner(...)
-      # plan = planner.plan_build(...)
-      # executor = BuildExecutor(...)
-      # executor.run(plan)
+      try:
+         actions = plan_build(resolved)
+      except Exception as exc:
+         print(f"Failed to plan build: {exc}")
+         return 1
+
+      print(f"Planned {len(actions)} build actions")
+      for action in actions:
+         print(action)
+
+      try:
+         execute_actions(actions, verbose=args.verbose)
+      except Exception as exc:
+         print(f"Build failed: {exc}")
+         return 1
 
       return 0

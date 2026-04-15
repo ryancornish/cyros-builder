@@ -20,6 +20,7 @@ class FeatureConfig:
 @dataclass(frozen=True)
 class OutputConfig:
    root: Path
+   archive: str
 
 
 @dataclass(frozen=True)
@@ -94,17 +95,18 @@ def load_profile(path: Path) -> Profile:
       ),
       output=OutputConfig(
          root=_resolve_profile_path(profile_path, _require_str(output_raw, "root", profile_path)),
+         archive=_require_str(output_raw, "archive", profile_path),
       ),
    )
 
    return profile
 
 def find_profiles(root: Path | None = None) -> list[Path]:
-    directory = profiles_dir(root)
-    if not directory.is_dir():
-        return []
+   directory = profiles_dir(root)
+   if not directory.is_dir():
+      return []
 
-    return sorted(
-        p for p in directory.iterdir()
-        if p.is_file() and p.suffix == ".toml"
-    )
+   return sorted(
+      p for p in directory.iterdir()
+      if p.is_file() and p.suffix == ".toml"
+   )

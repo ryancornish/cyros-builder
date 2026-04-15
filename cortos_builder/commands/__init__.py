@@ -6,6 +6,7 @@ from .show import ShowCommand
 from .test import TestCommand
 from .list_profiles import ListProfilesCommand
 from .list_toolchains import ListToolchainsCommand
+from .list_components import ListComponentsCommand
 
 __all__ = [
    "Command",
@@ -20,4 +21,5 @@ __all__ = [
    "TestCommand",
    "ListProfilesCommand",
    "ListToolchainsCommand",
+   "ListComponentsCommand",
 ]

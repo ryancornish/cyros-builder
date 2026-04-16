@@ -12,6 +12,7 @@ class BuildManifest:
 
    archive: Path
    module_root: Path
+   module_format: str
    include_root: Path
 
    public_modules: tuple[str, ...]
@@ -27,6 +28,7 @@ def write_manifest(path: Path, manifest: BuildManifest) -> None:
       "compiler_family": manifest.compiler_family,
       "archive": str(manifest.archive.resolve()),
       "module_root": str(manifest.module_root.resolve()),
+      "module_format": manifest.module_format,
       "include_root": str(manifest.include_root.resolve()),
       "public_modules": list(manifest.public_modules),
    }

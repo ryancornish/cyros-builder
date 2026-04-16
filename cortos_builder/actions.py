@@ -9,12 +9,12 @@ class BuildAction:
 
 @dataclass(frozen=True)
 class CompileAction(BuildAction):
+   component: str
    source: Path
    output: Path
    language: str
    kind: str
    arguments: tuple[str, ...]
-
 
 @dataclass(frozen=True)
 class ArchiveAction(BuildAction):

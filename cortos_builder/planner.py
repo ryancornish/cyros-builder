@@ -28,13 +28,14 @@ def plan_build(resolved: ResolvedInvocation) -> list:
 
          args = _compile_args(tc, resolved, src.path, obj)
          actions.append(
-               CompileAction(
-                  source=src.path,
-                  output=obj,
-                  language=src.language,
-                  kind=src.kind,
-                  arguments=args,
-               )
+            CompileAction(
+               component=component_name,
+               source=src.path,
+               output=obj,
+               language=src.language,
+               kind=src.kind,
+               arguments=args,
+            )
          )
 
    if object_files:

@@ -44,6 +44,8 @@ def _print_link_action(action: LinkAction, project_root: Path, branch: str, inde
 def format_command(arguments: tuple[str, ...] | list[str], project_root: Path) -> str:
    return " ".join(_pretty_arg(arg, project_root) for arg in arguments)
 
+def format_cwd(cwd: Path, project_root: Path) -> str:
+   return _rel(cwd, project_root)
 
 def _pretty_arg(arg: str, project_root: Path) -> str:
    p = Path(arg)

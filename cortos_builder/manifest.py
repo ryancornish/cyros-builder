@@ -15,9 +15,13 @@ class BuildManifest:
    module_format: str
    include_root: Path
 
+   selection: dict
+   built_groups: tuple[str, ...]
+
    public_modules: tuple[str, ...]
    resolved_public_modules: tuple[str, ...]
    modules: dict
+   link: dict
 
 
 def write_manifest(path: Path, manifest: BuildManifest) -> None:
@@ -32,9 +36,12 @@ def write_manifest(path: Path, manifest: BuildManifest) -> None:
       "module_root": str(manifest.module_root.resolve()),
       "module_format": manifest.module_format,
       "include_root": str(manifest.include_root.resolve()),
+      "selection": manifest.selection,
+      "built_groups": list(manifest.built_groups),
       "public_modules": list(manifest.public_modules),
       "resolved_public_modules": list(manifest.resolved_public_modules),
       "modules": manifest.modules,
+      "link": manifest.link,
    }
 
    tmp = path.with_suffix(path.suffix + ".tmp")

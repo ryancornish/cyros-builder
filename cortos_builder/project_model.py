@@ -236,3 +236,22 @@ def _require_str_list(data: dict, key: str, path: Path) -> list[str]:
    if not isinstance(value, list) or not all(isinstance(x, str) for x in value):
       raise ValueError(f"{path}: expected '{key}' to be a list of strings")
    return value
+
+def collect_system_libraries(selected: SelectedProject) -> tuple[str, ...]:
+   libs: list[str] = []
+
+   libs.extend(selected.port.system_libraries)
+
+   # Future:
+   # - time driver system libs
+   # - selected feature link requirements
+
+   seen: set[str] = set()
+   ordered: list[str] = []
+
+   for lib in libs:
+      if lib not in seen:
+         seen.add(lib)
+         ordered.append(lib)
+
+   return tuple(ordered)

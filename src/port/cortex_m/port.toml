@@ -1,0 +1,10 @@
+name = "cortex_m"
+description = "Bare-metal Cortex-M port"
+
+dependencies = []
+public_modules = []
+private_modules = []
+
+source_roots = ["."]
+generated_includes = true
+system_libraries = []

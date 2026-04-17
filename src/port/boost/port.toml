@@ -1,0 +1,10 @@
+name = "boost"
+description = "Boost.Context host simulation port"
+
+dependencies = []
+public_modules = []
+private_modules = []
+
+source_roots = ["."]
+generated_includes = true
+system_libraries = ["boost_context"]

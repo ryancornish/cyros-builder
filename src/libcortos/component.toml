@@ -1,4 +1,5 @@
 name = "libcortos"
+kind = "optional"
 description = "Optional higher-level RTOS library"
 
 dependencies = ["kernel", "time"]

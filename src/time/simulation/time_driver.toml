@@ -1,9 +1,7 @@
-name = "time"
-kind = "time"
-description = "Time driver layer"
+name = "simulation"
+description = "Simulation time driver"
 
 dependencies = ["port"]
-
 public_modules = []
 private_modules = []
 

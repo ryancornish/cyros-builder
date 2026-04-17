@@ -1,7 +1,18 @@
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Protocol
 
-from cortos_builder.component import Component
+from cortos_builder.module_scan import ModuleInfo, scan_module_info
+
+
+class SourceDiscoverable(Protocol):
+   @property
+   def name(self) -> str:
+      ...
+
+   @property
+   def source_roots(self) -> tuple[Path, ...]:
+      ...
 
 
 @dataclass(frozen=True)
@@ -10,9 +21,10 @@ class DiscoveredSource:
    path: Path
    language: str       # "c", "c++", "asm"
    kind: str           # "source" or "module_interface"
+   module_info: ModuleInfo | None = None
 
 
-def discover_component_sources(component: Component) -> list[DiscoveredSource]:
+def discover_component_sources(component: SourceDiscoverable) -> list[DiscoveredSource]:
    results: list[DiscoveredSource] = []
 
    for root in component.source_roots:
@@ -21,14 +33,14 @@ def discover_component_sources(component: Component) -> list[DiscoveredSource]:
 
       for path in sorted(root.rglob("*")):
          if not path.is_file():
-            continue
+               continue
 
          if _is_ignored(path):
-            continue
+               continue
 
          discovered = _classify_source(component.name, path)
          if discovered is not None:
-            results.append(discovered)
+               results.append(discovered)
 
    return results
 
@@ -44,33 +56,37 @@ def _classify_source(component_name: str, path: Path) -> DiscoveredSource | None
    if suffix == ".cppm":
       return DiscoveredSource(
          component=component_name,
-         path=path,
+         path=path.resolve(),
          language="c++",
          kind="module_interface",
+         module_info=scan_module_info(path),
       )
 
    if suffix in {".cpp", ".cc", ".cxx"}:
       return DiscoveredSource(
          component=component_name,
-         path=path,
+         path=path.resolve(),
          language="c++",
          kind="source",
+         module_info=scan_module_info(path),
       )
 
    if suffix == ".c":
       return DiscoveredSource(
          component=component_name,
-         path=path,
+         path=path.resolve(),
          language="c",
          kind="source",
+         module_info=None,
       )
 
    if suffix in {".s", ".S"}:
       return DiscoveredSource(
          component=component_name,
-         path=path,
+         path=path.resolve(),
          language="asm",
          kind="source",
+         module_info=None,
       )
 
    return None

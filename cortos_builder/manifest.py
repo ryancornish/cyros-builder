@@ -16,6 +16,8 @@ class BuildManifest:
    include_root: Path
 
    public_modules: tuple[str, ...]
+   resolved_public_modules: tuple[str, ...]
+   modules: dict
 
 
 def write_manifest(path: Path, manifest: BuildManifest) -> None:
@@ -31,6 +33,8 @@ def write_manifest(path: Path, manifest: BuildManifest) -> None:
       "module_format": manifest.module_format,
       "include_root": str(manifest.include_root.resolve()),
       "public_modules": list(manifest.public_modules),
+      "resolved_public_modules": list(manifest.resolved_public_modules),
+      "modules": manifest.modules,
    }
 
    tmp = path.with_suffix(path.suffix + ".tmp")

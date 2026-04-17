@@ -24,7 +24,7 @@ def print_action_plan(actions: list, project_root: Path) -> None:
 
 def _print_compile_action(action: CompileAction, project_root: Path, branch: str, indent: str) -> None:
    label = "compile-module" if action.kind == "module_interface" else "compile"
-   print(f"{branch} {label:<14} {_rel(action.source, project_root)}")
+   print(f"{branch} {label:<14} [{action.component}] {_rel(action.source, project_root)}")
    print(f"{indent}├─ output:      {_rel(action.output, project_root)}")
    print(f"{indent}└─ language:    {action.language}")
 

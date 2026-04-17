@@ -1,5 +1,8 @@
 name = "port"
+kind = "port"
 description = "Low-level port layer"
+
+variants = ["boost", "cortex_m"]
 
 dependencies = []
 

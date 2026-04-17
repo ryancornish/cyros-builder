@@ -1,6 +1,7 @@
-import json
 from argparse import ArgumentParser, Namespace
-from cortos_builder.commands.base import Command, add_profile_arg, add_toolchain_arg
+import json
+
+from cortos_builder.commands.base import Command, add_profile_arg, add_root_arg, add_toolchain_arg
 from cortos_builder.resolve import resolve_profile_and_toolchain
 
 
@@ -9,8 +10,6 @@ class ShowCommand(Command):
    help = "Show the resolved effective configuration for a profile/toolchain."
 
    def configure_parser(self, parser: ArgumentParser) -> None:
-      from cortos_builder.commands.base import add_root_arg
-
       add_root_arg(parser, required=False)
       add_profile_arg(parser, required=True)
       add_toolchain_arg(parser, required=False)
@@ -43,12 +42,12 @@ class ShowCommand(Command):
                   "time_driver": profile.build.time_driver,
                   "config": str(profile.build.config),
                },
-               "features": {
-                  "tests": profile.features.tests,
-                  "assertions": profile.features.assertions,
+               "libcortos": {
+                  "enable": list(profile.libcortos.enable),
                },
                "output": {
                   "root": str(profile.output.root),
+                  "archive": profile.output.archive,
                },
             },
             "toolchain": {
@@ -97,9 +96,9 @@ class ShowCommand(Command):
       print(f"  port:               {profile.build.port}")
       print(f"  time driver:        {profile.build.time_driver}")
       print(f"  config:             {profile.build.config}")
-      print(f"  tests:              {profile.features.tests}")
-      print(f"  assertions:         {profile.features.assertions}")
+      print(f"  libcortos enable:   {list(profile.libcortos.enable)}")
       print(f"  output root:        {profile.output.root}")
+      print(f"  archive:            {profile.output.archive}")
       print()
 
       print("Toolchain")

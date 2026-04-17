@@ -6,9 +6,8 @@ port = "boost"
 time_driver = "simulation"
 config = "../config_templates/sim.hpp"
 
-[features]
-tests = true
-assertions = true
+[libcortos]
+enable = ["sync", "timed_sync"]
 
 [output]
 root = "../bld"

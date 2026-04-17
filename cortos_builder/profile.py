@@ -1,7 +1,6 @@
-import tomllib
 from dataclasses import dataclass
 from pathlib import Path
-from cortos_builder.project import profiles_dir
+import tomllib
 
 
 @dataclass(frozen=True)
@@ -12,9 +11,8 @@ class BuildConfig:
 
 
 @dataclass(frozen=True)
-class FeatureConfig:
-   tests: bool
-   assertions: bool
+class LibcortosConfig:
+   enable: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -29,7 +27,7 @@ class Profile:
    name: str
    default_toolchain: str | None
    build: BuildConfig
-   features: FeatureConfig
+   libcortos: LibcortosConfig
    output: OutputConfig
 
 
@@ -56,10 +54,10 @@ def _optional_str(data: dict, key: str, profile_path: Path) -> str | None:
    return value
 
 
-def _require_bool(data: dict, key: str, profile_path: Path) -> bool:
+def _require_str_list(data: dict, key: str, profile_path: Path) -> list[str]:
    value = data.get(key)
-   if not isinstance(value, bool):
-      raise ValueError(f"{profile_path}: expected '{key}' to be a bool")
+   if not isinstance(value, list) or not all(isinstance(x, str) for x in value):
+      raise ValueError(f"{profile_path}: expected '{key}' to be a list of strings")
    return value
 
 
@@ -77,10 +75,10 @@ def load_profile(path: Path) -> Profile:
       raise ValueError(f"{profile_path}: root TOML document must be a table")
 
    build_raw = _expect_table(raw, "build", profile_path)
-   features_raw = _expect_table(raw, "features", profile_path)
+   libcortos_raw = _expect_table(raw, "libcortos", profile_path)
    output_raw = _expect_table(raw, "output", profile_path)
 
-   profile = Profile(
+   return Profile(
       path=profile_path,
       name=_require_str(raw, "name", profile_path),
       default_toolchain=_optional_str(raw, "default_toolchain", profile_path),
@@ -89,9 +87,8 @@ def load_profile(path: Path) -> Profile:
          time_driver=_require_str(build_raw, "time_driver", profile_path),
          config=_resolve_profile_path(profile_path, _require_str(build_raw, "config", profile_path)),
       ),
-      features=FeatureConfig(
-         tests=_require_bool(features_raw, "tests", profile_path),
-         assertions=_require_bool(features_raw, "assertions", profile_path),
+      libcortos=LibcortosConfig(
+         enable=tuple(_require_str_list(libcortos_raw, "enable", profile_path)),
       ),
       output=OutputConfig(
          root=_resolve_profile_path(profile_path, _require_str(output_raw, "root", profile_path)),
@@ -99,14 +96,14 @@ def load_profile(path: Path) -> Profile:
       ),
    )
 
-   return profile
-
 def find_profiles(root: Path | None = None) -> list[Path]:
-   directory = profiles_dir(root)
-   if not directory.is_dir():
+   project_root = (root or Path.cwd()).resolve()
+   profiles_dir = project_root / "profiles"
+
+   if not profiles_dir.is_dir():
       return []
 
    return sorted(
-      p for p in directory.iterdir()
+      p for p in profiles_dir.iterdir()
       if p.is_file() and p.suffix == ".toml"
    )

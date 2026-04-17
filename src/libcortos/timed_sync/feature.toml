@@ -1,0 +1,10 @@
+name = "timed_sync"
+description = "Timed synchronization primitives"
+
+dependencies = ["kernel", "time", "sync"]
+
+public_modules = ["cortos.timed_sync"]
+private_modules = []
+
+source_roots = ["."]
+generated_includes = true

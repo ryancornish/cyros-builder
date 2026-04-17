@@ -1,4 +1,5 @@
 name = "kernel"
+kind = "core"
 description = "Public microkernel API and private kernel implementation"
 
 dependencies = ["port"]

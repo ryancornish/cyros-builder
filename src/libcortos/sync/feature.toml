@@ -1,0 +1,10 @@
+name = "sync"
+description = "Basic synchronization primitives"
+
+dependencies = ["kernel"]
+
+public_modules = ["cortos.sync"]
+private_modules = []
+
+source_roots = ["."]
+generated_includes = true

@@ -11,6 +11,7 @@ def populate_include_tree(resolved: ResolvedInvocation) -> None:
 
    Generated outputs:
    <include_root>/cortos/config.hpp
+   <include_root>/cortos/port.h
    <include_root>/cortos/port_traits.h
    """
    root = resolved.project_root
@@ -21,9 +22,22 @@ def populate_include_tree(resolved: ResolvedInvocation) -> None:
    config_dst = out_include / "config.hpp"
    _copy_file(config_src, config_dst, "profile config header")
 
+   port_contract_src = _resolve_port_contract_header(root)
+   port_contract_dst = out_include / "port.h"
+   _copy_file(port_contract_src, port_contract_dst, "port contract header")
+
    port_traits_src = _resolve_port_traits_header(root, resolved.profile.build.port)
    port_traits_dst = out_include / "port_traits.h"
    _copy_file(port_traits_src, port_traits_dst, "port traits header")
+
+
+def _resolve_port_contract_header(project_root: Path) -> Path:
+   path = project_root / "src" / "port" / "port.h"
+   if not path.is_file():
+      raise FileNotFoundError(
+         f"Missing common port contract header at: {path}"
+      )
+   return path.resolve()
 
 
 def _resolve_port_traits_header(project_root: Path, port_name: str) -> Path:

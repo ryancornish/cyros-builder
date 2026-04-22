@@ -1,6 +1,8 @@
-export module cortos.kernel;
+#pragma once
 
-export namespace cortos
+#include <cortos/kernel.hpp>
+
+namespace cortos
 {
    class Thread
    {

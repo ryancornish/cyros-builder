@@ -2,6 +2,7 @@ name = "cortex_m"
 description = "Bare-metal Cortex-M port"
 
 dependencies = []
+public_headers = []
 public_modules = []
 private_modules = []
 

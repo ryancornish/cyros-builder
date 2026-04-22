@@ -2,6 +2,7 @@ name = "boost"
 description = "Boost.Context host simulation port"
 
 dependencies = []
+public_headers = []
 public_modules = []
 private_modules = []
 

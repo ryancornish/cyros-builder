@@ -9,7 +9,7 @@ asm = "gcc-15"
 [flags]
 common = []
 c = ["-std=c23", "-Wall", "-Wextra", "-Wpedantic"]
-cxx = ["-std=gnu++26", "-Wall", "-Wextra", "-Wpedantic"]
+cxx = ["-std=gnu++23", "-Wall", "-Wextra", "-Wpedantic"]
 asm = []
 link = []
 
@@ -18,4 +18,4 @@ family = "gcc"
 debug = false
 optimization = "0"
 warnings_as_errors = false
-use_modules = true
+use_modules = false

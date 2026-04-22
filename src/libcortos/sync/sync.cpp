@@ -1,4 +1,4 @@
-module cortos.sync;
+#include <cortos/sync/mutex.hpp>
 
 namespace cortos
 {

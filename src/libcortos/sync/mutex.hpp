@@ -1,6 +1,6 @@
-export module cortos.sync;
+#pragma once
 
-export namespace cortos
+namespace cortos
 {
    class Mutex
    {

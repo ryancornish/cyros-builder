@@ -9,4 +9,4 @@ link_add = ["-stdlib=libc++"]
 [settings]
 debug = true
 optimization = "0"
-use_modules = true
+use_modules = false

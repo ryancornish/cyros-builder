@@ -2,5 +2,5 @@
 
 namespace cortos
 {
-   void PortYield();
+   class Thread;
 }

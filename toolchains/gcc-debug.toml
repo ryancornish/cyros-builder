@@ -3,8 +3,8 @@ extends = "gcc-base"
 
 [flags]
 common_add = ["-O0", "-g"]
-cxx_add = ["-fmodules", "-fmodules-ts"]
 
 [settings]
 debug = true
 optimization = "0"
+use_modules = false

@@ -2,6 +2,7 @@ from cortos_builder.manifest import BuildManifest
 from cortos_builder.module_map import collect_provided_modules
 from cortos_builder.output import include_dir, lib_dir, module_dir
 from cortos_builder.project_model import (
+   collect_public_headers,
    collect_public_modules,
    collect_system_libraries,
    select_project,
@@ -14,7 +15,7 @@ def build_manifest(resolved: ResolvedInvocation) -> BuildManifest:
    family = resolved.toolchain.settings.family
    module_format = "gcm.cache" if family == "gcc" else "pcm"
 
-   provided_modules = collect_provided_modules(resolved)
+   provided_modules = collect_provided_modules(resolved) if resolved.toolchain.settings.use_modules else {}
 
    modules_json = {
       name: {
@@ -26,9 +27,9 @@ def build_manifest(resolved: ResolvedInvocation) -> BuildManifest:
       for name, record in sorted(provided_modules.items())
    }
 
-   declared = collect_public_modules(selected)
-   resolved_public = tuple(name for name in declared if name in provided_modules)
-
+   declared_modules = collect_public_modules(selected)
+   resolved_public_modules = tuple(name for name in declared_modules if name in provided_modules)
+   public_headers = tuple(str(export.destination) for export in collect_public_headers(selected))
    system_libraries = collect_system_libraries(selected)
 
    selection = {
@@ -53,8 +54,9 @@ def build_manifest(resolved: ResolvedInvocation) -> BuildManifest:
       module_root=module_dir(resolved),
       module_format=module_format,
       include_root=include_dir(resolved),
-      public_modules=declared,
-      resolved_public_modules=resolved_public,
+      public_headers=public_headers,
+      public_modules=declared_modules,
+      resolved_public_modules=resolved_public_modules,
       modules=modules_json,
       link={
          "system_libraries": list(system_libraries),

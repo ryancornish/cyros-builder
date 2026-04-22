@@ -18,11 +18,13 @@ def plan_build(resolved: ResolvedInvocation) -> list:
    modules_root = module_dir(resolved)
 
    discovered_sources: list[DiscoveredSource] = []
-
    for group in iter_source_groups(selected):
-      discovered_sources.extend(discover_component_sources(group))
+      discovered_sources.extend(discover_component_sources(group, use_modules=tc.settings.use_modules))
 
-   ordered_sources = _order_sources_by_module_dependencies(discovered_sources)
+   if tc.settings.use_modules:
+      ordered_sources = _order_sources_by_module_dependencies(discovered_sources)
+   else:
+      ordered_sources = sorted(discovered_sources, key=lambda s: (s.component, str(s.path)))
 
    actions = []
    object_files: list[Path] = []

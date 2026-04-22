@@ -19,12 +19,12 @@ class SourceDiscoverable(Protocol):
 class DiscoveredSource:
    component: str
    path: Path
-   language: str       # "c", "c++", "asm"
-   kind: str           # "source" or "module_interface"
+   language: str
+   kind: str
    module_info: ModuleInfo | None = None
 
 
-def discover_component_sources(component: SourceDiscoverable) -> list[DiscoveredSource]:
+def discover_component_sources(component: SourceDiscoverable, *, use_modules: bool) -> list[DiscoveredSource]:
    results: list[DiscoveredSource] = []
 
    for root in component.source_roots:
@@ -33,14 +33,14 @@ def discover_component_sources(component: SourceDiscoverable) -> list[Discovered
 
       for path in sorted(root.rglob("*")):
          if not path.is_file():
-               continue
+            continue
 
          if _is_ignored(path):
-               continue
+            continue
 
-         discovered = _classify_source(component.name, path)
+         discovered = _classify_source(component.name, path, use_modules=use_modules)
          if discovered is not None:
-               results.append(discovered)
+            results.append(discovered)
 
    return results
 
@@ -50,10 +50,12 @@ def _is_ignored(path: Path) -> bool:
    return any(part in ignored_dir_names for part in path.parts)
 
 
-def _classify_source(component_name: str, path: Path) -> DiscoveredSource | None:
+def _classify_source(component_name: str, path: Path, *, use_modules: bool) -> DiscoveredSource | None:
    suffix = path.suffix.lower()
 
    if suffix == ".cppm":
+      if not use_modules:
+         return None
       return DiscoveredSource(
          component=component_name,
          path=path.resolve(),
@@ -68,7 +70,7 @@ def _classify_source(component_name: str, path: Path) -> DiscoveredSource | None
          path=path.resolve(),
          language="c++",
          kind="source",
-         module_info=scan_module_info(path),
+         module_info=scan_module_info(path) if use_modules else None,
       )
 
    if suffix == ".c":

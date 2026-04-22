@@ -21,6 +21,7 @@ def build_parser() -> argparse.ArgumentParser:
       CleanCommand(),
       TestCommand(),
       GenDbCommand(),
+      ExportIncludesCommand(),
       ShowCommand(),
       ListProfilesCommand(),
       ListToolchainsCommand(),

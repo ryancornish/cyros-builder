@@ -4,20 +4,27 @@ import tomllib
 
 
 @dataclass(frozen=True)
-class BuildConfig:
-   port: str
-   time_driver: str
-   config: Path
+class LayoutConfig:
+   project_root: Path
+   build_root: Path
+   source_root: Path
+   output_root: Path
 
 
 @dataclass(frozen=True)
-class LibcortosConfig:
+class BuildConfig:
+   port: str
+   time_driver: str
+   config_header: Path
+
+
+@dataclass(frozen=True)
+class FeaturesConfig:
    enable: tuple[str, ...]
 
 
 @dataclass(frozen=True)
 class OutputConfig:
-   root: Path
    archive: str
 
 
@@ -26,8 +33,9 @@ class Profile:
    path: Path
    name: str
    default_toolchain: str | None
+   layout: LayoutConfig
    build: BuildConfig
-   libcortos: LibcortosConfig
+   features: FeaturesConfig
    output: OutputConfig
 
 
@@ -61,8 +69,20 @@ def _require_str_list(data: dict, key: str, profile_path: Path) -> list[str]:
    return value
 
 
-def _resolve_profile_path(profile_path: Path, value: str) -> Path:
+def _resolve_relative(profile_path: Path, value: str) -> Path:
    return (profile_path.parent / value).resolve()
+
+
+def _require_existing_dir(path: Path, desc: str, profile_path: Path) -> Path:
+   if not path.is_dir():
+      raise ValueError(f"{profile_path}: resolved {desc} does not exist or is not a directory: {path}")
+   return path
+
+
+def _require_existing_file(path: Path, desc: str, profile_path: Path) -> Path:
+   if not path.is_file():
+      raise ValueError(f"{profile_path}: resolved {desc} does not exist or is not a file: {path}")
+   return path
 
 
 def load_profile(path: Path) -> Profile:
@@ -74,36 +94,78 @@ def load_profile(path: Path) -> Profile:
    if not isinstance(raw, dict):
       raise ValueError(f"{profile_path}: root TOML document must be a table")
 
+   layout_raw = _expect_table(raw, "layout", profile_path)
    build_raw = _expect_table(raw, "build", profile_path)
-   libcortos_raw = _expect_table(raw, "libcortos", profile_path)
+   features_raw = _expect_table(raw, "features", profile_path)
    output_raw = _expect_table(raw, "output", profile_path)
+
+   project_root = _require_existing_dir(
+      _resolve_relative(profile_path, _require_str(layout_raw, "project_root", profile_path)),
+      "layout.project_root",
+      profile_path,
+   )
+   build_root = _require_existing_dir(
+      _resolve_relative(profile_path, _require_str(layout_raw, "build_root", profile_path)),
+      "layout.build_root",
+      profile_path,
+   )
+   source_root = _require_existing_dir(
+      _resolve_relative(profile_path, _require_str(layout_raw, "source_root", profile_path)),
+      "layout.source_root",
+      profile_path,
+   )
+   output_root = _resolve_relative(profile_path, _require_str(layout_raw, "output_root", profile_path))
+
+   config_header = _require_existing_file(
+      (build_root / "configs" / _require_str(build_raw, "config_header", profile_path)).resolve(),
+      "build.config_header",
+      profile_path,
+   )
+
+   toolchain_name = _optional_str(raw, "default_toolchain", profile_path)
+   if toolchain_name is not None:
+      toolchain_path = (build_root / "toolchains" / f"{toolchain_name}.toml").resolve()
+      if not toolchain_path.is_file():
+         raise ValueError(
+            f"{profile_path}: default_toolchain '{toolchain_name}' was not found at {toolchain_path}"
+         )
 
    return Profile(
       path=profile_path,
       name=_require_str(raw, "name", profile_path),
-      default_toolchain=_optional_str(raw, "default_toolchain", profile_path),
+      default_toolchain=toolchain_name,
+      layout=LayoutConfig(
+         project_root=project_root,
+         build_root=build_root,
+         source_root=source_root,
+         output_root=output_root,
+      ),
       build=BuildConfig(
          port=_require_str(build_raw, "port", profile_path),
          time_driver=_require_str(build_raw, "time_driver", profile_path),
-         config=_resolve_profile_path(profile_path, _require_str(build_raw, "config", profile_path)),
+         config_header=config_header,
       ),
-      libcortos=LibcortosConfig(
-         enable=tuple(_require_str_list(libcortos_raw, "enable", profile_path)),
+      features=FeaturesConfig(
+         enable=tuple(_require_str_list(features_raw, "enable", profile_path)),
       ),
       output=OutputConfig(
-         root=_resolve_profile_path(profile_path, _require_str(output_raw, "root", profile_path)),
          archive=_require_str(output_raw, "archive", profile_path),
       ),
    )
 
+
 def find_profiles(root: Path | None = None) -> list[Path]:
    project_root = (root or Path.cwd()).resolve()
-   profiles_dir = project_root / "profiles"
+   candidates = [
+      project_root / "build" / "profiles",
+      project_root / "profiles",
+   ]
 
-   if not profiles_dir.is_dir():
-      return []
+   for profiles_dir in candidates:
+      if profiles_dir.is_dir():
+         return sorted(
+            p for p in profiles_dir.iterdir()
+            if p.is_file() and p.suffix == ".toml"
+         )
 
-   return sorted(
-      p for p in profiles_dir.iterdir()
-      if p.is_file() and p.suffix == ".toml"
-   )
+   return []

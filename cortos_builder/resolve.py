@@ -16,8 +16,8 @@ class ResolvedInvocation:
 
 
 def resolve_profile_and_toolchain(args: Namespace) -> ResolvedInvocation:
-   project_root = resolve_project_root(getattr(args, "root", None))
-   profile = load_profile(args.profile)
+   profile = load_profile(Path(args.profile))
+   project_root = profile.layout.project_root
 
    toolchain_name = args.toolchain or profile.default_toolchain
    if toolchain_name is None:
@@ -26,7 +26,7 @@ def resolve_profile_and_toolchain(args: Namespace) -> ResolvedInvocation:
          "Provide --toolchain or set default_toolchain in the profile."
       )
 
-   toolchain = resolve_toolchain(toolchain_name, project_root)
+   toolchain = resolve_toolchain(toolchain_name, profile.layout.build_root)
 
    return ResolvedInvocation(
       project_root=project_root,

@@ -4,7 +4,7 @@ from cortos_builder.resolve import ResolvedInvocation
 
 
 def build_root(resolved: ResolvedInvocation) -> Path:
-   return resolved.profile.output.root / resolved.selected_toolchain_name
+   return resolved.profile.layout.output_root / resolved.selected_toolchain_name
 
 
 def obj_dir(resolved: ResolvedInvocation) -> Path:

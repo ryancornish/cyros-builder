@@ -2,7 +2,6 @@ from __future__ import annotations
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
-from cortos_builder.project import toolchains_dir
 
 
 # -----------------------------------------------------------------------------
@@ -62,7 +61,8 @@ class RawToolchain:
 # -----------------------------------------------------------------------------
 
 def find_toolchain_paths(root: Path | None = None) -> list[Path]:
-   directory = toolchains_dir(root)
+   base = (root or Path.cwd()).resolve()
+   directory = base / "toolchains"
    if not directory.is_dir():
       return []
    return sorted(

@@ -1,14 +1,19 @@
-name = "sim"
+name = "linux_boost_sim"
 default_toolchain = "gcc-debug"
+
+[layout]
+project_root = "../"
+build_root = "../"
+source_root = "../src"
+output_root = "../out"
 
 [build]
 port = "boost"
 time_driver = "simulation"
-config = "../config_templates/sim.hpp"
+config_header = "sim.hpp"
 
-[libcortos]
+[features]
 enable = ["sync", "timed_sync"]
 
 [output]
-root = "../bld"
 archive = "cortos.a"

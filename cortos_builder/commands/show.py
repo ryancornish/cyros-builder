@@ -40,13 +40,18 @@ class ShowCommand(Command):
                "build": {
                   "port": profile.build.port,
                   "time_driver": profile.build.time_driver,
-                  "config": str(profile.build.config),
+                  "config_header": str(profile.build.config_header),
                },
-               "libcortos": {
-                  "enable": list(profile.libcortos.enable),
+               "features": {
+                  "enable": list(profile.features.enable),
+               },
+               "layout": {
+                  "project_root": str(profile.layout.project_root),
+                  "build_root": str(profile.layout.build_root),
+                  "source_root": str(profile.layout.source_root),
+                  "output_root": str(profile.layout.output_root),
                },
                "output": {
-                  "root": str(profile.output.root),
                   "archive": profile.output.archive,
                },
             },
@@ -95,9 +100,12 @@ class ShowCommand(Command):
       print(f"  default toolchain:  {profile.default_toolchain}")
       print(f"  port:               {profile.build.port}")
       print(f"  time driver:        {profile.build.time_driver}")
-      print(f"  config:             {profile.build.config}")
-      print(f"  libcortos enable:   {list(profile.libcortos.enable)}")
-      print(f"  output root:        {profile.output.root}")
+      print(f"  config header:      {profile.build.config_header}")
+      print(f"  features enable:    {list(profile.features.enable)}")
+      print(f"  project root:       {profile.layout.project_root}")
+      print(f"  build root:         {profile.layout.build_root}")
+      print(f"  source root:        {profile.layout.source_root}")
+      print(f"  output root:        {profile.layout.output_root}")
       print(f"  archive:            {profile.output.archive}")
       print()
 

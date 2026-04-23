@@ -2,7 +2,7 @@ import json
 from argparse import ArgumentParser, Namespace
 from cortos_builder.commands.base import Command, add_root_arg
 from cortos_builder.profile import find_profiles, load_profile
-from cortos_builder.project import resolve_project_root
+from cortos_builder.project import profiles_dir, resolve_project_root
 
 
 class ListProfilesCommand(Command):
@@ -23,7 +23,7 @@ class ListProfilesCommand(Command):
       profile_paths = find_profiles(project_root)
 
       if not profile_paths:
-         print(f"No profiles found in {project_root / 'profiles'}")
+         print(f"No profiles found in {profiles_dir(project_root)}")
          return 1
 
       profiles = []

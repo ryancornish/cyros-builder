@@ -1,7 +1,7 @@
 import json
 from argparse import ArgumentParser, Namespace
 from cortos_builder.commands.base import Command, add_root_arg
-from cortos_builder.project import resolve_project_root
+from cortos_builder.project import resolve_project_root, toolchains_dir
 from cortos_builder.toolchain import list_toolchain_names, resolve_toolchain
 
 
@@ -33,7 +33,7 @@ class ListToolchainsCommand(Command):
          return 1
 
       if not names:
-         print(f"No toolchains found in {project_root / 'toolchains'}")
+         print(f"No toolchains found in {toolchains_dir(project_root)}")
          return 1
 
       if args.names_only:

@@ -50,25 +50,25 @@ class SelectedProject:
    features: dict[str, Feature]
 
 
-def load_kernel(root: Path) -> Kernel:
-   path = (root / "src" / "kernel" / "component.toml").resolve()
+def load_kernel(profile) -> Kernel:
+   path = (profile.layout.source_root / "kernel" / "component.toml").resolve()
    raw = _load_toml(path)
    return Kernel(
       path=path,
       name=_require_str(raw, "name", path),
-      description=_require_str(raw, "description", path),
-      dependencies=tuple(_require_str_list(raw, "dependencies", path)),
+      description=_optional_str(raw, "description", path, default=""),
+      dependencies=tuple(_optional_str_list(raw, "dependencies", path)),
       public_headers=_parse_public_headers(raw, path),
       public_modules=tuple(_optional_str_list(raw, "public_modules", path)),
       private_modules=tuple(_optional_str_list(raw, "private_modules", path)),
-      source_roots=_resolve_source_roots(path, _require_str_list(raw, "source_roots", path)),
-      generated_includes=_require_bool(raw, "generated_includes", path),
+      source_roots=_resolve_source_roots(path, _optional_str_list(raw, "source_roots", path, default=["."])),
+      generated_includes=_optional_bool(raw, "generated_includes", path, default=True),
    )
 
 
-def load_ports(root: Path) -> dict[str, Port]:
+def load_ports(profile) -> dict[str, Port]:
    result: dict[str, Port] = {}
-   base = (root / "src" / "port").resolve()
+   base = (profile.layout.source_root / "port").resolve()
    if not base.is_dir():
       return result
 
@@ -77,14 +77,14 @@ def load_ports(root: Path) -> dict[str, Port]:
       port = Port(
          path=meta.resolve(),
          name=_require_str(raw, "name", meta),
-         description=_require_str(raw, "description", meta),
-         dependencies=tuple(_require_str_list(raw, "dependencies", meta)),
+         description=_optional_str(raw, "description", meta, default=""),
+         dependencies=tuple(_optional_str_list(raw, "dependencies", meta)),
          public_headers=_parse_public_headers(raw, meta),
          public_modules=tuple(_optional_str_list(raw, "public_modules", meta)),
          private_modules=tuple(_optional_str_list(raw, "private_modules", meta)),
-         source_roots=_resolve_source_roots(meta, _require_str_list(raw, "source_roots", meta)),
-         generated_includes=_require_bool(raw, "generated_includes", meta),
-         system_libraries=tuple(_require_str_list(raw, "system_libraries", meta)),
+         source_roots=_resolve_source_roots(meta, _optional_str_list(raw, "source_roots", meta, default=["."])),
+         generated_includes=_optional_bool(raw, "generated_includes", meta, default=True),
+         system_libraries=tuple(_optional_str_list(raw, "system_libraries", meta)),
       )
       if port.name in result:
          raise ValueError(f"Duplicate port '{port.name}'")
@@ -93,9 +93,9 @@ def load_ports(root: Path) -> dict[str, Port]:
    return result
 
 
-def load_time_drivers(root: Path) -> dict[str, TimeDriver]:
+def load_time_drivers(profile) -> dict[str, TimeDriver]:
    result: dict[str, TimeDriver] = {}
-   base = (root / "src" / "time").resolve()
+   base = (profile.layout.source_root / "time").resolve()
    if not base.is_dir():
       return result
 
@@ -104,13 +104,13 @@ def load_time_drivers(root: Path) -> dict[str, TimeDriver]:
       td = TimeDriver(
          path=meta.resolve(),
          name=_require_str(raw, "name", meta),
-         description=_require_str(raw, "description", meta),
-         dependencies=tuple(_require_str_list(raw, "dependencies", meta)),
+         description=_optional_str(raw, "description", meta, default=""),
+         dependencies=tuple(_optional_str_list(raw, "dependencies", meta)),
          public_headers=_parse_public_headers(raw, meta),
          public_modules=tuple(_optional_str_list(raw, "public_modules", meta)),
          private_modules=tuple(_optional_str_list(raw, "private_modules", meta)),
-         source_roots=_resolve_source_roots(meta, _require_str_list(raw, "source_roots", meta)),
-         generated_includes=_require_bool(raw, "generated_includes", meta),
+         source_roots=_resolve_source_roots(meta, _optional_str_list(raw, "source_roots", meta, default=["."])),
+         generated_includes=_optional_bool(raw, "generated_includes", meta, default=True),
       )
       if td.name in result:
          raise ValueError(f"Duplicate time driver '{td.name}'")
@@ -119,9 +119,9 @@ def load_time_drivers(root: Path) -> dict[str, TimeDriver]:
    return result
 
 
-def load_features(root: Path) -> dict[str, Feature]:
+def load_features(profile) -> dict[str, Feature]:
    result: dict[str, Feature] = {}
-   base = (root / "src" / "libcortos").resolve()
+   base = (profile.layout.source_root / "libcortos").resolve()
    if not base.is_dir():
       return result
 
@@ -130,13 +130,13 @@ def load_features(root: Path) -> dict[str, Feature]:
       feat = Feature(
          path=meta.resolve(),
          name=_require_str(raw, "name", meta),
-         description=_require_str(raw, "description", meta),
-         dependencies=tuple(_require_str_list(raw, "dependencies", meta)),
+         description=_optional_str(raw, "description", meta, default=""),
+         dependencies=tuple(_optional_str_list(raw, "dependencies", meta)),
          public_headers=_parse_public_headers(raw, meta),
          public_modules=tuple(_optional_str_list(raw, "public_modules", meta)),
          private_modules=tuple(_optional_str_list(raw, "private_modules", meta)),
-         source_roots=_resolve_source_roots(meta, _require_str_list(raw, "source_roots", meta)),
-         generated_includes=_require_bool(raw, "generated_includes", meta),
+         source_roots=_resolve_source_roots(meta, _optional_str_list(raw, "source_roots", meta, default=["."])),
+         generated_includes=_optional_bool(raw, "generated_includes", meta, default=True),
       )
       if feat.name in result:
          raise ValueError(f"Duplicate feature '{feat.name}'")
@@ -146,15 +146,16 @@ def load_features(root: Path) -> dict[str, Feature]:
 
 
 def select_project(root: Path, profile) -> SelectedProject:
-   kernel = load_kernel(root)
+   _ = root  # retained for call-site compatibility
+   kernel = load_kernel(profile)
 
-   ports = load_ports(root)
+   ports = load_ports(profile)
    if profile.build.port not in ports:
       known = ", ".join(sorted(ports)) or "<none>"
       raise ValueError(f"Unknown port '{profile.build.port}'. Known ports: {known}")
    port = ports[profile.build.port]
 
-   time_drivers = load_time_drivers(root)
+   time_drivers = load_time_drivers(profile)
    if profile.build.time_driver not in time_drivers:
       known = ", ".join(sorted(time_drivers)) or "<none>"
       raise ValueError(
@@ -162,13 +163,13 @@ def select_project(root: Path, profile) -> SelectedProject:
       )
    time_driver = time_drivers[profile.build.time_driver]
 
-   all_features = load_features(root)
+   all_features = load_features(profile)
    selected_features: dict[str, Feature] = {}
 
-   for name in profile.libcortos.enable:
+   for name in profile.features.enable:
       if name not in all_features:
          known = ", ".join(sorted(all_features)) or "<none>"
-         raise ValueError(f"Unknown libcortos feature '{name}'. Known features: {known}")
+         raise ValueError(f"Unknown feature '{name}'. Known features: {known}")
       selected_features[name] = all_features[name]
 
    _validate_feature_dependencies(selected_features)
@@ -218,7 +219,7 @@ def _validate_feature_dependencies(selected_features: dict[str, Feature]) -> Non
             continue
          if dep not in selected_names:
             raise ValueError(
-               f"Selected libcortos feature '{feature.name}' depends on '{dep}', "
+               f"Selected feature '{feature.name}' depends on '{dep}', "
                f"but '{dep}' is not enabled"
             )
 
@@ -271,8 +272,26 @@ def _require_str(data: dict, key: str, path: Path) -> str:
    return value
 
 
+def _optional_str(data: dict, key: str, path: Path, default: str = "") -> str:
+   value = data.get(key)
+   if value is None:
+      return default
+   if not isinstance(value, str):
+      raise ValueError(f"{path}: expected '{key}' to be a string")
+   return value
+
+
 def _require_bool(data: dict, key: str, path: Path) -> bool:
    value = data.get(key)
+   if not isinstance(value, bool):
+      raise ValueError(f"{path}: expected '{key}' to be a bool")
+   return value
+
+
+def _optional_bool(data: dict, key: str, path: Path, default: bool = False) -> bool:
+   value = data.get(key)
+   if value is None:
+      return default
    if not isinstance(value, bool):
       raise ValueError(f"{path}: expected '{key}' to be a bool")
    return value
@@ -285,10 +304,10 @@ def _require_str_list(data: dict, key: str, path: Path) -> list[str]:
    return value
 
 
-def _optional_str_list(data: dict, key: str, path: Path) -> list[str]:
+def _optional_str_list(data: dict, key: str, path: Path, default: list[str] | None = None) -> list[str]:
    value = data.get(key)
    if value is None:
-      return []
+      return [] if default is None else list(default)
    if not isinstance(value, list) or not all(isinstance(x, str) for x in value):
       raise ValueError(f"{path}: expected '{key}' to be a list of strings")
    return list(value)

@@ -19,7 +19,7 @@ def populate_include_tree(resolved: ResolvedInvocation) -> None:
       _copy_file(export.source, out_include / export.destination, "public header")
 
    config_src = resolved.profile.build.config_header
-   config_dst = out_include / "cortos" / "config.hpp"
+   config_dst = out_include / "cortos"/ "config" / "config.hpp"
    _copy_file(config_src, config_dst, "profile config header")
 
 

@@ -28,8 +28,18 @@ class Kernel(SourceGroup):
 
 
 @dataclass(frozen=True)
+class PortComponent(SourceGroup):
+   variants: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class Port(SourceGroup):
    system_libraries: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class TimeComponent(SourceGroup):
+   variants: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -45,7 +55,9 @@ class Feature(SourceGroup):
 @dataclass(frozen=True)
 class SelectedProject:
    kernel: Kernel
+   port_component: PortComponent
    port: Port
+   time_component: TimeComponent
    time_driver: TimeDriver
    features: dict[str, Feature]
 
@@ -61,8 +73,25 @@ def load_kernel(profile) -> Kernel:
       public_headers=_parse_public_headers(raw, path),
       public_modules=tuple(_optional_str_list(raw, "public_modules", path)),
       private_modules=tuple(_optional_str_list(raw, "private_modules", path)),
-      source_roots=_resolve_source_roots(path, _optional_str_list(raw, "source_roots", path, default=["."])),
+      source_roots=_resolve_source_roots(meta_path=path, values=_optional_str_list(raw, "source_roots", path, default=["."])),
       generated_includes=_optional_bool(raw, "generated_includes", path, default=True),
+   )
+
+
+def load_port_component(profile) -> PortComponent:
+   path = (profile.layout.source_root / "port" / "component.toml").resolve()
+   raw = _load_toml(path)
+   return PortComponent(
+      path=path,
+      name=_require_str(raw, "name", path),
+      description=_optional_str(raw, "description", path, default=""),
+      dependencies=tuple(_optional_str_list(raw, "dependencies", path)),
+      public_headers=_parse_public_headers(raw, path),
+      public_modules=tuple(_optional_str_list(raw, "public_modules", path)),
+      private_modules=tuple(_optional_str_list(raw, "private_modules", path)),
+      source_roots=_resolve_source_roots(meta_path=path, values=_optional_str_list(raw, "source_roots", path, default=[])),
+      generated_includes=_optional_bool(raw, "generated_includes", path, default=True),
+      variants=tuple(_optional_str_list(raw, "variants", path)),
    )
 
 
@@ -82,7 +111,7 @@ def load_ports(profile) -> dict[str, Port]:
          public_headers=_parse_public_headers(raw, meta),
          public_modules=tuple(_optional_str_list(raw, "public_modules", meta)),
          private_modules=tuple(_optional_str_list(raw, "private_modules", meta)),
-         source_roots=_resolve_source_roots(meta, _optional_str_list(raw, "source_roots", meta, default=["."])),
+         source_roots=_resolve_source_roots(meta_path=meta, values=_optional_str_list(raw, "source_roots", meta, default=["."])),
          generated_includes=_optional_bool(raw, "generated_includes", meta, default=True),
          system_libraries=tuple(_optional_str_list(raw, "system_libraries", meta)),
       )
@@ -91,6 +120,23 @@ def load_ports(profile) -> dict[str, Port]:
       result[port.name] = port
 
    return result
+
+
+def load_time_component(profile) -> TimeComponent:
+   path = (profile.layout.source_root / "time" / "component.toml").resolve()
+   raw = _load_toml(path)
+   return TimeComponent(
+      path=path,
+      name=_require_str(raw, "name", path),
+      description=_optional_str(raw, "description", path, default=""),
+      dependencies=tuple(_optional_str_list(raw, "dependencies", path)),
+      public_headers=_parse_public_headers(raw, path),
+      public_modules=tuple(_optional_str_list(raw, "public_modules", path)),
+      private_modules=tuple(_optional_str_list(raw, "private_modules", path)),
+      source_roots=_resolve_source_roots(meta_path=path, values=_optional_str_list(raw, "source_roots", path, default=[])),
+      generated_includes=_optional_bool(raw, "generated_includes", path, default=True),
+      variants=tuple(_optional_str_list(raw, "variants", path)),
+   )
 
 
 def load_time_drivers(profile) -> dict[str, TimeDriver]:
@@ -109,7 +155,7 @@ def load_time_drivers(profile) -> dict[str, TimeDriver]:
          public_headers=_parse_public_headers(raw, meta),
          public_modules=tuple(_optional_str_list(raw, "public_modules", meta)),
          private_modules=tuple(_optional_str_list(raw, "private_modules", meta)),
-         source_roots=_resolve_source_roots(meta, _optional_str_list(raw, "source_roots", meta, default=["."])),
+         source_roots=_resolve_source_roots(meta_path=meta, values=_optional_str_list(raw, "source_roots", meta, default=["."])),
          generated_includes=_optional_bool(raw, "generated_includes", meta, default=True),
       )
       if td.name in result:
@@ -135,7 +181,7 @@ def load_features(profile) -> dict[str, Feature]:
          public_headers=_parse_public_headers(raw, meta),
          public_modules=tuple(_optional_str_list(raw, "public_modules", meta)),
          private_modules=tuple(_optional_str_list(raw, "private_modules", meta)),
-         source_roots=_resolve_source_roots(meta, _optional_str_list(raw, "source_roots", meta, default=["."])),
+         source_roots=_resolve_source_roots(meta_path=meta, values=_optional_str_list(raw, "source_roots", meta, default=["."])),
          generated_includes=_optional_bool(raw, "generated_includes", meta, default=True),
       )
       if feat.name in result:
@@ -147,13 +193,23 @@ def load_features(profile) -> dict[str, Feature]:
 
 def select_project(root: Path, profile) -> SelectedProject:
    _ = root  # retained for call-site compatibility
+
    kernel = load_kernel(profile)
+   port_component = load_port_component(profile)
+   time_component = load_time_component(profile)
 
    ports = load_ports(profile)
    if profile.build.port not in ports:
       known = ", ".join(sorted(ports)) or "<none>"
       raise ValueError(f"Unknown port '{profile.build.port}'. Known ports: {known}")
    port = ports[profile.build.port]
+
+   if port_component.variants and port.name not in port_component.variants:
+      known = ", ".join(port_component.variants)
+      raise ValueError(
+         f"Selected port '{port.name}' is not declared in port/component.toml variants. "
+         f"Declared variants: {known}"
+      )
 
    time_drivers = load_time_drivers(profile)
    if profile.build.time_driver not in time_drivers:
@@ -162,6 +218,13 @@ def select_project(root: Path, profile) -> SelectedProject:
          f"Unknown time driver '{profile.build.time_driver}'. Known time drivers: {known}"
       )
    time_driver = time_drivers[profile.build.time_driver]
+
+   if time_component.variants and time_driver.name not in time_component.variants:
+      known = ", ".join(time_component.variants)
+      raise ValueError(
+         f"Selected time driver '{time_driver.name}' is not declared in time/component.toml variants. "
+         f"Declared variants: {known}"
+      )
 
    all_features = load_features(profile)
    selected_features: dict[str, Feature] = {}
@@ -176,7 +239,9 @@ def select_project(root: Path, profile) -> SelectedProject:
 
    return SelectedProject(
       kernel=kernel,
+      port_component=port_component,
       port=port,
+      time_component=time_component,
       time_driver=time_driver,
       features=selected_features,
    )
@@ -185,7 +250,9 @@ def select_project(root: Path, profile) -> SelectedProject:
 def collect_public_headers(selected: SelectedProject) -> tuple[HeaderExport, ...]:
    exports: list[HeaderExport] = []
    exports.extend(selected.kernel.public_headers)
+   exports.extend(selected.port_component.public_headers)
    exports.extend(selected.port.public_headers)
+   exports.extend(selected.time_component.public_headers)
    exports.extend(selected.time_driver.public_headers)
    for name in sorted(selected.features):
       exports.extend(selected.features[name].public_headers)
@@ -195,7 +262,9 @@ def collect_public_headers(selected: SelectedProject) -> tuple[HeaderExport, ...
 def collect_public_modules(selected: SelectedProject) -> tuple[str, ...]:
    modules: list[str] = []
    modules.extend(selected.kernel.public_modules)
+   modules.extend(selected.port_component.public_modules)
    modules.extend(selected.port.public_modules)
+   modules.extend(selected.time_component.public_modules)
    modules.extend(selected.time_driver.public_modules)
    for name in sorted(selected.features):
       modules.extend(selected.features[name].public_modules)
@@ -281,26 +350,12 @@ def _optional_str(data: dict, key: str, path: Path, default: str = "") -> str:
    return value
 
 
-def _require_bool(data: dict, key: str, path: Path) -> bool:
-   value = data.get(key)
-   if not isinstance(value, bool):
-      raise ValueError(f"{path}: expected '{key}' to be a bool")
-   return value
-
-
 def _optional_bool(data: dict, key: str, path: Path, default: bool = False) -> bool:
    value = data.get(key)
    if value is None:
       return default
    if not isinstance(value, bool):
       raise ValueError(f"{path}: expected '{key}' to be a bool")
-   return value
-
-
-def _require_str_list(data: dict, key: str, path: Path) -> list[str]:
-   value = data.get(key)
-   if not isinstance(value, list) or not all(isinstance(x, str) for x in value):
-      raise ValueError(f"{path}: expected '{key}' to be a list of strings")
    return value
 
 

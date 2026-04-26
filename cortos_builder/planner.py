@@ -1,37 +1,46 @@
-from collections import deque
 from pathlib import Path
 
 from cortos_builder.actions import ArchiveAction, CompileAction
 from cortos_builder.output import include_dir, lib_dir, module_dir, obj_dir
 from cortos_builder.project_model import iter_source_groups, select_project
 from cortos_builder.resolve import ResolvedInvocation
-from cortos_builder.source_discovery import DiscoveredSource, discover_component_sources
+
+
+class PlannedSource:
+   def __init__(self, component: str, path: Path, language: str, kind: str, archive: bool):
+      self.component = component
+      self.path = path
+      self.language = language
+      self.kind = kind
+      self.archive = archive
 
 
 def plan_build(resolved: ResolvedInvocation) -> list:
-   root = resolved.project_root
+   root = resolved.project_root.resolve()
    tc = resolved.toolchain
    selected = select_project(root, resolved.profile)
+
+   if tc.settings.use_modules:
+      raise NotImplementedError(
+         "Explicit-source planner currently supports non-module builds only. "
+         "Reintroduce module scanning/ordering before enabling use_modules=true."
+      )
 
    objects_root = obj_dir(resolved)
    libraries_root = lib_dir(resolved)
    modules_root = module_dir(resolved)
 
-   discovered_sources: list[DiscoveredSource] = []
+   planned_sources: list[PlannedSource] = []
    for group in iter_source_groups(selected):
-      discovered_sources.extend(discover_component_sources(group, use_modules=tc.settings.use_modules))
+      planned_sources.extend(_planned_sources_for_group(group))
 
-   if tc.settings.use_modules:
-      ordered_sources = _order_sources_by_module_dependencies(discovered_sources)
-   else:
-      ordered_sources = sorted(discovered_sources, key=lambda s: (s.component, str(s.path)))
+   ordered_sources = sorted(planned_sources, key=lambda s: (s.component, str(s.path)))
 
    actions = []
-   object_files: list[Path] = []
+   archive_object_files: list[Path] = []
 
    for src in ordered_sources:
       obj = _object_path_for(objects_root, src.path, root, src.kind)
-      object_files.append(obj)
 
       args = _compile_args(tc, resolved, src.path, obj)
       cwd = modules_root.resolve()
@@ -48,97 +57,75 @@ def plan_build(resolved: ResolvedInvocation) -> list:
          )
       )
 
-   if object_files:
+      if src.archive:
+         archive_object_files.append(obj)
+
+   if archive_object_files:
       archive = (libraries_root / resolved.profile.output.archive).resolve()
       archive_args = (
          tc.tools.ar,
          "rcs",
          str(archive),
-         *[str(obj.resolve()) for obj in object_files],
+         *[str(obj.resolve()) for obj in archive_object_files],
       )
       actions.append(
          ArchiveAction(
-            inputs=tuple(object_files),
+            inputs=tuple(archive_object_files),
             output=archive,
             arguments=archive_args,
-            working_directory=root.resolve(),
+            working_directory=root,
          )
       )
 
    return actions
 
 
-def _order_sources_by_module_dependencies(sources: list[DiscoveredSource]) -> list[DiscoveredSource]:
-   sources = sorted(sources, key=lambda s: (s.component, str(s.path)))
+def _planned_sources_for_group(group) -> list[PlannedSource]:
+   result: list[PlannedSource] = []
+   seen: set[Path] = set()
 
-   provider_for_module: dict[str, DiscoveredSource] = {}
-
-   for src in sources:
-      info = src.module_info
-      if info is None:
+   for src in group.sources:
+      resolved = src.resolve()
+      if resolved in seen:
          continue
-      if info.provided_module is not None:
-         mod = info.provided_module
-         if mod in provider_for_module:
-            raise ValueError(
-               f"Multiple sources provide module '{mod}':\n"
-               f"  {provider_for_module[mod].path}\n"
-               f"  {src.path}"
-            )
-         provider_for_module[mod] = src
-
-   edges: dict[Path, set[Path]] = {src.path: set() for src in sources}
-   indegree: dict[Path, int] = {src.path: 0 for src in sources}
-   by_path: dict[Path, DiscoveredSource] = {src.path: src for src in sources}
-
-   def add_edge(before: DiscoveredSource, after: DiscoveredSource) -> None:
-      if after.path not in edges[before.path]:
-         edges[before.path].add(after.path)
-         indegree[after.path] += 1
-
-   for src in sources:
-      info = src.module_info
-      if info is None:
-         continue
-
-      if info.implementation_of is not None:
-         provider = provider_for_module.get(info.implementation_of)
-         if provider is None:
-            raise ValueError(
-               f"{src.path}: implementation unit for module "
-               f"'{info.implementation_of}' has no known provider"
-            )
-         add_edge(provider, src)
-
-      for imported in info.imports:
-         provider = provider_for_module.get(imported)
-         if provider is not None:
-            add_edge(provider, src)
-
-   ready = deque(sorted(
-      (path for path, deg in indegree.items() if deg == 0),
-      key=lambda p: str(p),
-   ))
-
-   ordered_paths: list[Path] = []
-
-   while ready:
-      current = ready.popleft()
-      ordered_paths.append(current)
-
-      for nxt in sorted(edges[current], key=lambda p: str(p)):
-         indegree[nxt] -= 1
-         if indegree[nxt] == 0:
-            ready.append(nxt)
-
-   if len(ordered_paths) != len(sources):
-      remaining = [str(path) for path, deg in indegree.items() if deg > 0]
-      raise ValueError(
-         "Module dependency cycle or unresolved ordering among:\n  "
-         + "\n  ".join(sorted(remaining))
+      seen.add(resolved)
+      result.append(
+         PlannedSource(
+            component=group.name,
+            path=resolved,
+            language=_language_for(resolved),
+            kind="translation_unit",
+            archive=True,
+         )
       )
 
-   return [by_path[path] for path in ordered_paths]
+   for src in group.sources_excluded_from_archive:
+      resolved = src.resolve()
+      if resolved in seen:
+         continue
+      seen.add(resolved)
+      result.append(
+         PlannedSource(
+            component=group.name,
+            path=resolved,
+            language=_language_for(resolved),
+            kind="translation_unit",
+            archive=False,
+         )
+      )
+
+   return result
+
+
+def _language_for(source: Path) -> str:
+   suffix = source.suffix.lower()
+   if suffix == ".c":
+      return "c"
+   if suffix in {".s", ".asm"}:
+      return "asm"
+   if source.suffix == ".S":
+      return "asm"
+   return "c++"
 
 
 def _compile_args(tc, resolved: ResolvedInvocation, source: Path, output: Path) -> tuple[str, ...]:

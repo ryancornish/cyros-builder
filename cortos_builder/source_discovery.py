@@ -1,94 +1,54 @@
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
 
-from cortos_builder.module_scan import ModuleInfo, scan_module_info
-
-
-class SourceDiscoverable(Protocol):
-   @property
-   def name(self) -> str:
-      ...
-
-   @property
-   def source_roots(self) -> tuple[Path, ...]:
-      ...
+from cortos_builder.project_model import SourceGroup
 
 
-@dataclass(frozen=True)
-class DiscoveredSource:
-   component: str
-   path: Path
-   language: str
-   kind: str
-   module_info: ModuleInfo | None = None
+SOURCE_SUFFIXES = {".c", ".cc", ".cpp", ".cxx", ".cppm", ".S", ".s", ".asm"}
 
 
-def discover_component_sources(component: SourceDiscoverable, *, use_modules: bool) -> list[DiscoveredSource]:
-   results: list[DiscoveredSource] = []
+def discover_sources(group: SourceGroup, use_modules: bool) -> list[Path]:
+   explicit = list(group.sources) + list(group.sources_excluded_from_archive)
+   if explicit:
+      return _filter_and_validate_sources(explicit, use_modules=use_modules)
 
-   for root in component.source_roots:
+   discovered: list[Path] = []
+   for root in group.source_roots:
       if not root.is_dir():
          continue
-
       for path in sorted(root.rglob("*")):
          if not path.is_file():
             continue
-
-         if _is_ignored(path):
+         if path.suffix not in SOURCE_SUFFIXES:
             continue
+         discovered.append(path.resolve())
 
-         discovered = _classify_source(component.name, path, use_modules=use_modules)
-         if discovered is not None:
-            results.append(discovered)
-
-   return results
+   return _filter_and_validate_sources(discovered, use_modules=use_modules)
 
 
-def _is_ignored(path: Path) -> bool:
-   ignored_dir_names = {"build", "out", ".git", ".cache", "__pycache__"}
-   return any(part in ignored_dir_names for part in path.parts)
+def discover_archive_sources(group: SourceGroup, use_modules: bool) -> list[Path]:
+   if group.sources or group.sources_excluded_from_archive:
+      return _filter_and_validate_sources(list(group.sources), use_modules=use_modules)
+
+   all_sources = discover_sources(group, use_modules=use_modules)
+   excluded = {p.resolve() for p in group.sources_excluded_from_archive}
+   return [p for p in all_sources if p.resolve() not in excluded]
 
 
-def _classify_source(component_name: str, path: Path, *, use_modules: bool) -> DiscoveredSource | None:
-   suffix = path.suffix.lower()
+def _filter_and_validate_sources(paths: list[Path], use_modules: bool) -> list[Path]:
+   resolved: list[Path] = []
+   seen: set[Path] = set()
 
-   if suffix == ".cppm":
-      if not use_modules:
-         return None
-      return DiscoveredSource(
-         component=component_name,
-         path=path.resolve(),
-         language="c++",
-         kind="module_interface",
-         module_info=scan_module_info(path),
-      )
+   for path in paths:
+      p = path.resolve()
+      if not p.is_file():
+         raise FileNotFoundError(f"Missing source file: {p}")
 
-   if suffix in {".cpp", ".cc", ".cxx"}:
-      return DiscoveredSource(
-         component=component_name,
-         path=path.resolve(),
-         language="c++",
-         kind="source",
-         module_info=scan_module_info(path) if use_modules else None,
-      )
+      if not use_modules and p.suffix == ".cppm":
+         continue
 
-   if suffix == ".c":
-      return DiscoveredSource(
-         component=component_name,
-         path=path.resolve(),
-         language="c",
-         kind="source",
-         module_info=None,
-      )
+      if p not in seen:
+         seen.add(p)
+         resolved.append(p)
 
-   if suffix in {".s", ".S"}:
-      return DiscoveredSource(
-         component=component_name,
-         path=path.resolve(),
-         language="asm",
-         kind="source",
-         module_info=None,
-      )
-
-   return None
+   resolved.sort()
+   return resolved

@@ -19,6 +19,8 @@ class SourceGroup:
    public_modules: tuple[str, ...]
    private_modules: tuple[str, ...]
    source_roots: tuple[Path, ...]
+   sources: tuple[Path, ...]
+   sources_excluded_from_archive: tuple[Path, ...]
    generated_includes: bool
 
 
@@ -73,7 +75,18 @@ def load_kernel(profile) -> Kernel:
       public_headers=_parse_public_headers(raw, path),
       public_modules=tuple(_optional_str_list(raw, "public_modules", path)),
       private_modules=tuple(_optional_str_list(raw, "private_modules", path)),
-      source_roots=_resolve_source_roots(meta_path=path, values=_optional_str_list(raw, "source_roots", path, default=["."])),
+      source_roots=_resolve_source_roots(
+         meta_path=path,
+         values=_optional_str_list(raw, "source_roots", path, default=["."]),
+      ),
+      sources=_resolve_sources(
+         meta_path=path,
+         values=_optional_str_list(raw, "sources", path),
+      ),
+      sources_excluded_from_archive=_resolve_sources(
+         meta_path=path,
+         values=_optional_str_list(raw, "sources_excluded_from_archive", path),
+      ),
       generated_includes=_optional_bool(raw, "generated_includes", path, default=True),
    )
 
@@ -89,7 +102,18 @@ def load_port_component(profile) -> PortComponent:
       public_headers=_parse_public_headers(raw, path),
       public_modules=tuple(_optional_str_list(raw, "public_modules", path)),
       private_modules=tuple(_optional_str_list(raw, "private_modules", path)),
-      source_roots=_resolve_source_roots(meta_path=path, values=_optional_str_list(raw, "source_roots", path, default=[])),
+      source_roots=_resolve_source_roots(
+         meta_path=path,
+         values=_optional_str_list(raw, "source_roots", path, default=[]),
+      ),
+      sources=_resolve_sources(
+         meta_path=path,
+         values=_optional_str_list(raw, "sources", path),
+      ),
+      sources_excluded_from_archive=_resolve_sources(
+         meta_path=path,
+         values=_optional_str_list(raw, "sources_excluded_from_archive", path),
+      ),
       generated_includes=_optional_bool(raw, "generated_includes", path, default=True),
       variants=tuple(_optional_str_list(raw, "variants", path)),
    )
@@ -111,7 +135,18 @@ def load_ports(profile) -> dict[str, Port]:
          public_headers=_parse_public_headers(raw, meta),
          public_modules=tuple(_optional_str_list(raw, "public_modules", meta)),
          private_modules=tuple(_optional_str_list(raw, "private_modules", meta)),
-         source_roots=_resolve_source_roots(meta_path=meta, values=_optional_str_list(raw, "source_roots", meta, default=["."])),
+         source_roots=_resolve_source_roots(
+            meta_path=meta,
+            values=_optional_str_list(raw, "source_roots", meta, default=["."]),
+         ),
+         sources=_resolve_sources(
+            meta_path=meta,
+            values=_optional_str_list(raw, "sources", meta),
+         ),
+         sources_excluded_from_archive=_resolve_sources(
+            meta_path=meta,
+            values=_optional_str_list(raw, "sources_excluded_from_archive", meta),
+         ),
          generated_includes=_optional_bool(raw, "generated_includes", meta, default=True),
          system_libraries=tuple(_optional_str_list(raw, "system_libraries", meta)),
       )
@@ -133,7 +168,18 @@ def load_time_component(profile) -> TimeComponent:
       public_headers=_parse_public_headers(raw, path),
       public_modules=tuple(_optional_str_list(raw, "public_modules", path)),
       private_modules=tuple(_optional_str_list(raw, "private_modules", path)),
-      source_roots=_resolve_source_roots(meta_path=path, values=_optional_str_list(raw, "source_roots", path, default=[])),
+      source_roots=_resolve_source_roots(
+         meta_path=path,
+         values=_optional_str_list(raw, "source_roots", path, default=[]),
+      ),
+      sources=_resolve_sources(
+         meta_path=path,
+         values=_optional_str_list(raw, "sources", path),
+      ),
+      sources_excluded_from_archive=_resolve_sources(
+         meta_path=path,
+         values=_optional_str_list(raw, "sources_excluded_from_archive", path),
+      ),
       generated_includes=_optional_bool(raw, "generated_includes", path, default=True),
       variants=tuple(_optional_str_list(raw, "variants", path)),
    )
@@ -155,7 +201,18 @@ def load_time_drivers(profile) -> dict[str, TimeDriver]:
          public_headers=_parse_public_headers(raw, meta),
          public_modules=tuple(_optional_str_list(raw, "public_modules", meta)),
          private_modules=tuple(_optional_str_list(raw, "private_modules", meta)),
-         source_roots=_resolve_source_roots(meta_path=meta, values=_optional_str_list(raw, "source_roots", meta, default=["."])),
+         source_roots=_resolve_source_roots(
+            meta_path=meta,
+            values=_optional_str_list(raw, "source_roots", meta, default=["."]),
+         ),
+         sources=_resolve_sources(
+            meta_path=meta,
+            values=_optional_str_list(raw, "sources", meta),
+         ),
+         sources_excluded_from_archive=_resolve_sources(
+            meta_path=meta,
+            values=_optional_str_list(raw, "sources_excluded_from_archive", meta),
+         ),
          generated_includes=_optional_bool(raw, "generated_includes", meta, default=True),
       )
       if td.name in result:
@@ -181,7 +238,18 @@ def load_features(profile) -> dict[str, Feature]:
          public_headers=_parse_public_headers(raw, meta),
          public_modules=tuple(_optional_str_list(raw, "public_modules", meta)),
          private_modules=tuple(_optional_str_list(raw, "private_modules", meta)),
-         source_roots=_resolve_source_roots(meta_path=meta, values=_optional_str_list(raw, "source_roots", meta, default=["."])),
+         source_roots=_resolve_source_roots(
+            meta_path=meta,
+            values=_optional_str_list(raw, "source_roots", meta, default=["."]),
+         ),
+         sources=_resolve_sources(
+            meta_path=meta,
+            values=_optional_str_list(raw, "sources", meta),
+         ),
+         sources_excluded_from_archive=_resolve_sources(
+            meta_path=meta,
+            values=_optional_str_list(raw, "sources_excluded_from_archive", meta),
+         ),
          generated_includes=_optional_bool(raw, "generated_includes", meta, default=True),
       )
       if feat.name in result:
@@ -236,6 +304,13 @@ def select_project(root: Path, profile) -> SelectedProject:
       selected_features[name] = all_features[name]
 
    _validate_feature_dependencies(selected_features)
+   _validate_source_separation(kernel)
+   _validate_source_separation(port_component)
+   _validate_source_separation(port)
+   _validate_source_separation(time_component)
+   _validate_source_separation(time_driver)
+   for feat in selected_features.values():
+      _validate_source_separation(feat)
 
    return SelectedProject(
       kernel=kernel,
@@ -279,6 +354,14 @@ def iter_source_groups(selected: SelectedProject):
       yield selected.features[name]
 
 
+def iter_archive_source_groups(selected: SelectedProject):
+   yield selected.kernel
+   yield selected.port
+   yield selected.time_driver
+   for name in sorted(selected.features):
+      yield selected.features[name]
+
+
 def _validate_feature_dependencies(selected_features: dict[str, Feature]) -> None:
    selected_names = set(selected_features)
 
@@ -293,6 +376,17 @@ def _validate_feature_dependencies(selected_features: dict[str, Feature]) -> Non
             )
 
 
+def _validate_source_separation(group: SourceGroup) -> None:
+   normal = set(group.sources)
+   excluded = set(group.sources_excluded_from_archive)
+   overlap = sorted(normal & excluded)
+   if overlap:
+      names = ", ".join(str(p) for p in overlap)
+      raise ValueError(
+         f"{group.path}: sources and sources_excluded_from_archive overlap: {names}"
+      )
+
+
 def _load_toml(path: Path) -> dict:
    if not path.is_file():
       raise FileNotFoundError(path)
@@ -304,6 +398,11 @@ def _load_toml(path: Path) -> dict:
 
 
 def _resolve_source_roots(meta_path: Path, values: list[str]) -> tuple[Path, ...]:
+   base = meta_path.parent
+   return tuple((base / value).resolve() for value in values)
+
+
+def _resolve_sources(meta_path: Path, values: list[str]) -> tuple[Path, ...]:
    base = meta_path.parent
    return tuple((base / value).resolve() for value in values)
 

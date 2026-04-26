@@ -1,9 +1,9 @@
 from dataclasses import dataclass
+from pathlib import Path
 
 from cortos_builder.output import module_dir
 from cortos_builder.project_model import iter_source_groups, select_project
 from cortos_builder.resolve import ResolvedInvocation
-from cortos_builder.source_discovery import discover_component_sources
 
 
 @dataclass(frozen=True)
@@ -15,37 +15,21 @@ class ProvidedModule:
    artifact_hint: str
 
 
-def collect_provided_modules(resolved: ResolvedInvocation) -> dict[str, ProvidedModule]:
-   selected = select_project(resolved.project_root, resolved.profile)
-   modules_root = module_dir(resolved).resolve()
+def collect_provided_modules(resolved) -> dict[str, Path]:
+   """
+   Return a mapping of provided module name -> source/provider path.
 
-   provided: dict[str, ProvidedModule] = {}
+   In the current explicit-source, non-module build flow, this is only relevant
+   when use_modules=true. For now, return an empty mapping for normal builds and
+   fail clearly if module builds are re-enabled before the module path is rebuilt.
+   """
+   if not resolved.toolchain.settings.use_modules:
+      return {}
 
-   for group in iter_source_groups(selected):
-      sources = discover_component_sources(group)
-
-      for src in sources:
-         info = src.module_info
-         if info is None or info.provided_module is None:
-               continue
-
-         mod = info.provided_module
-         if mod in provided:
-               raise ValueError(
-                  f"Multiple sources provide module '{mod}':\n"
-                  f"  {provided[mod].provider_source}\n"
-                  f"  {src.path}"
-               )
-
-         provided[mod] = ProvidedModule(
-               name=mod,
-               component=src.component,
-               provider_source=str(src.path.resolve()),
-               kind=src.kind,
-               artifact_hint=_artifact_hint_for_module(resolved, mod, modules_root),
-         )
-
-   return provided
+   raise NotImplementedError(
+      "collect_provided_modules() for module builds has not been reimplemented "
+      "for the explicit-source planner yet."
+   )
 
 
 def _artifact_hint_for_module(resolved: ResolvedInvocation, module_name: str, modules_root) -> str:

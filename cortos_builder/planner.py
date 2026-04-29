@@ -134,11 +134,13 @@ def _plan_lto_pruned_archive(
    archive_name = resolved.profile.output.archive
    archive = (libraries_root / archive_name).resolve()
 
-   stem = archive.stem
-   mega = (libraries_root / f"{stem}.mega_combined.o").resolve()
-   pruned = (libraries_root / f"{stem}.pruned.o").resolve()
-   filtered = (libraries_root / f"{stem}.filtered.o").resolve()
-   final_obj = (libraries_root / f"{stem}.final.o").resolve()
+   pipeline_root = (obj_dir(resolved) / "archive").resolve()
+   final_object_stem = "cortos" # Hard-coded for now
+
+   mega = (pipeline_root / f"{final_object_stem}.mega_combined.o").resolve()
+   pruned = (pipeline_root / f"{final_object_stem}.pruned.o").resolve()
+   filtered = (pipeline_root / f"{final_object_stem}.filtered.o").resolve()
+   final_obj = (pipeline_root / f"{final_object_stem}.o").resolve()
 
    exported_symbols_file = _resolve_exported_symbols_file(resolved)
    exported_symbols = _load_exported_symbols(exported_symbols_file)
@@ -193,8 +195,6 @@ def _plan_lto_pruned_archive(
          )
       )
       current_input = pruned
-   else:
-      pruned = current_input
 
    if tc.archive.filter_exported_symbols:
       filter_args = (
@@ -212,27 +212,22 @@ def _plan_lto_pruned_archive(
          )
       )
       current_input = filtered
-   else:
-      filtered = current_input
 
-   # if tc.archive.remove_lto_sections:
-   #    strip_args = (
-   #       "objcopy",
-   #       "--remove-section=.gnu.lto*",
-   #       str(current_input),
-   #       str(final_obj),
-   #    )
-   #    actions.append(
-   #       ObjcopyAction(
-   #          input=current_input,
-   #          output=final_obj,
-   #          arguments=strip_args,
-   #          working_directory=working_directory,
-   #       )
-   #    )
-   #    current_input = final_obj
-   # else:
-   final_obj = current_input
+   if current_input != final_obj:
+      rename_args = (
+         "objcopy",
+         str(current_input),
+         str(final_obj),
+      )
+      actions.append(
+         ObjcopyAction(
+            input=current_input,
+            output=final_obj,
+            arguments=rename_args,
+            working_directory=working_directory,
+         )
+      )
+      current_input = final_obj
 
    archive_args = (
       tc.tools.ar,

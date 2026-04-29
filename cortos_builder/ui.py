@@ -1,6 +1,12 @@
 from pathlib import Path
 
-from cortos_builder.actions import ArchiveAction, CompileAction, LinkAction
+from cortos_builder.actions import (
+   ArchiveAction,
+   CompileAction,
+   LinkAction,
+   ObjcopyAction,
+   PartialLinkAction,
+)
 
 
 def print_action_plan(actions: list, project_root: Path) -> None:
@@ -18,6 +24,10 @@ def print_action_plan(actions: list, project_root: Path) -> None:
          _print_archive_action(action, project_root, branch, indent)
       elif isinstance(action, LinkAction):
          _print_link_action(action, project_root, branch, indent)
+      elif isinstance(action, PartialLinkAction):
+         _print_partial_link_action(action, project_root, branch, indent)
+      elif isinstance(action, ObjcopyAction):
+         _print_objcopy_action(action, project_root, branch, indent)
       else:
          print(f"{branch} unknown action: {type(action).__name__}")
 
@@ -41,11 +51,25 @@ def _print_link_action(action: LinkAction, project_root: Path, branch: str, inde
    print(f"{indent}└─ inputs:      {len(action.inputs)} objects")
 
 
+def _print_partial_link_action(action: PartialLinkAction, project_root: Path, branch: str, indent: str) -> None:
+   print(f"{branch} partial-link")
+   print(f"{indent}├─ output:      {_rel(action.output, project_root)}")
+   print(f"{indent}└─ inputs:      {len(action.inputs)} objects")
+
+
+def _print_objcopy_action(action: ObjcopyAction, project_root: Path, branch: str, indent: str) -> None:
+   print(f"{branch} objcopy")
+   print(f"{indent}├─ input:       {_rel(action.input, project_root)}")
+   print(f"{indent}└─ output:      {_rel(action.output, project_root)}")
+
+
 def format_command(arguments: tuple[str, ...] | list[str], project_root: Path) -> str:
    return " ".join(_pretty_arg(arg, project_root) for arg in arguments)
 
+
 def format_cwd(cwd: Path, project_root: Path) -> str:
    return _rel(cwd, project_root)
+
 
 def _pretty_arg(arg: str, project_root: Path) -> str:
    p = Path(arg)

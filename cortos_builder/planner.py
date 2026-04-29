@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from cortos_builder.actions import ArchiveAction, CompileAction
+from cortos_builder.actions import ArchiveAction, CompileAction, ObjcopyAction, PartialLinkAction
 from cortos_builder.output import include_dir, lib_dir, module_dir, obj_dir
 from cortos_builder.project_model import iter_source_groups, select_project
 from cortos_builder.resolve import ResolvedInvocation
@@ -61,23 +61,231 @@ def plan_build(resolved: ResolvedInvocation) -> list:
          archive_object_files.append(obj)
 
    if archive_object_files:
-      archive = (libraries_root / resolved.profile.output.archive).resolve()
-      archive_args = (
-         tc.tools.ar,
-         "rcs",
-         str(archive),
-         *[str(obj.resolve()) for obj in archive_object_files],
-      )
-      actions.append(
-         ArchiveAction(
-            inputs=tuple(archive_object_files),
-            output=archive,
-            arguments=archive_args,
+      actions.extend(
+         _plan_archive_pipeline(
+            resolved=resolved,
+            object_files=archive_object_files,
             working_directory=root,
+            libraries_root=libraries_root,
          )
       )
 
    return actions
+
+
+def _plan_archive_pipeline(
+   *,
+   resolved: ResolvedInvocation,
+   object_files: list[Path],
+   working_directory: Path,
+   libraries_root: Path,
+) -> list:
+   strategy = resolved.toolchain.archive.strategy
+   if strategy == "simple":
+      return _plan_simple_archive(
+         resolved=resolved,
+         object_files=object_files,
+         working_directory=working_directory,
+         libraries_root=libraries_root,
+      )
+   if strategy == "lto_pruned":
+      return _plan_lto_pruned_archive(
+         resolved=resolved,
+         object_files=object_files,
+         working_directory=working_directory,
+         libraries_root=libraries_root,
+      )
+
+   raise ValueError(f"Unsupported archive strategy: {strategy}")
+
+
+def _plan_simple_archive(
+   *,
+   resolved: ResolvedInvocation,
+   object_files: list[Path],
+   working_directory: Path,
+   libraries_root: Path,
+) -> list:
+   archive = (libraries_root / resolved.profile.output.archive).resolve()
+   archive_args = (
+      resolved.toolchain.tools.ar,
+      "rcs",
+      str(archive),
+      *[str(obj.resolve()) for obj in object_files],
+   )
+   return [
+      ArchiveAction(
+         inputs=tuple(object_files),
+         output=archive,
+         arguments=archive_args,
+         working_directory=working_directory,
+      )
+   ]
+
+
+def _plan_lto_pruned_archive(
+   *,
+   resolved: ResolvedInvocation,
+   object_files: list[Path],
+   working_directory: Path,
+   libraries_root: Path,
+) -> list:
+   tc = resolved.toolchain
+   archive_name = resolved.profile.output.archive
+   archive = (libraries_root / archive_name).resolve()
+
+   stem = archive.stem
+   mega = (libraries_root / f"{stem}.mega_combined.o").resolve()
+   pruned = (libraries_root / f"{stem}.pruned.o").resolve()
+   filtered = (libraries_root / f"{stem}.filtered.o").resolve()
+   final_obj = (libraries_root / f"{stem}.final.o").resolve()
+
+   exported_symbols_file = _resolve_exported_symbols_file(resolved)
+   exported_symbols = _load_exported_symbols(exported_symbols_file)
+
+   if tc.archive.gc_using_public_symbols and not exported_symbols:
+      raise ValueError(
+         f"Archive strategy 'lto_pruned' requires at least one exported symbol in: {exported_symbols_file}"
+      )
+
+   actions: list = []
+
+   merge_args = (
+      tc.tools.cxx,
+      "-no-pie",
+      "-nostdlib",
+      "-flto",
+      "-flinker-output=nolto-rel",
+      "-fuse-linker-plugin",
+      "-Wl,-r",
+      "-o",
+      str(mega),
+      *[str(obj.resolve()) for obj in object_files],
+   )
+   actions.append(
+      PartialLinkAction(
+         inputs=tuple(object_files),
+         output=mega,
+         arguments=merge_args,
+         working_directory=working_directory,
+      )
+   )
+
+   current_input = mega
+
+   if tc.archive.gc_using_public_symbols:
+      gc_root_flags = tuple(f"--undefined={sym}" for sym in exported_symbols)
+      prune_args = (
+         "ld",
+         "-r",
+         "--gc-sections",
+         *gc_root_flags,
+         "-o",
+         str(pruned),
+         str(current_input),
+      )
+      actions.append(
+         PartialLinkAction(
+            inputs=(current_input,),
+            output=pruned,
+            arguments=prune_args,
+            working_directory=working_directory,
+         )
+      )
+      current_input = pruned
+   else:
+      pruned = current_input
+
+   if tc.archive.filter_exported_symbols:
+      filter_args = (
+         "objcopy",
+         f"--keep-global-symbols={exported_symbols_file}",
+         str(current_input),
+         str(filtered),
+      )
+      actions.append(
+         ObjcopyAction(
+            input=current_input,
+            output=filtered,
+            arguments=filter_args,
+            working_directory=working_directory,
+         )
+      )
+      current_input = filtered
+   else:
+      filtered = current_input
+
+   # if tc.archive.remove_lto_sections:
+   #    strip_args = (
+   #       "objcopy",
+   #       "--remove-section=.gnu.lto*",
+   #       str(current_input),
+   #       str(final_obj),
+   #    )
+   #    actions.append(
+   #       ObjcopyAction(
+   #          input=current_input,
+   #          output=final_obj,
+   #          arguments=strip_args,
+   #          working_directory=working_directory,
+   #       )
+   #    )
+   #    current_input = final_obj
+   # else:
+   final_obj = current_input
+
+   archive_args = (
+      tc.tools.ar,
+      "rcs",
+      str(archive),
+      str(current_input),
+   )
+   actions.append(
+      ArchiveAction(
+         inputs=(current_input,),
+         output=archive,
+         arguments=archive_args,
+         working_directory=working_directory,
+      )
+   )
+
+   return actions
+
+
+def _resolve_exported_symbols_file(resolved: ResolvedInvocation) -> Path:
+   configured = resolved.toolchain.archive.exported_symbols_file
+   if configured:
+      candidate = Path(configured)
+      if not candidate.is_absolute():
+         candidate = (resolved.profile.layout.build_root / candidate).resolve()
+      else:
+         candidate = candidate.resolve()
+      return candidate
+
+   return (resolved.profile.layout.build_root / "exports" / "public_symbols.txt").resolve()
+
+
+def _load_exported_symbols(path: Path) -> list[str]:
+   if not path.is_file():
+      raise FileNotFoundError(
+         f"Missing exported symbols file for archive pipeline: {path}"
+      )
+
+   result: list[str] = []
+   for line in path.read_text(encoding="utf-8").splitlines():
+      text = line.strip()
+      if not text or text.startswith("#"):
+         continue
+      result.append(text)
+
+   seen: set[str] = set()
+   ordered: list[str] = []
+   for sym in result:
+      if sym not in seen:
+         seen.add(sym)
+         ordered.append(sym)
+
+   return ordered
 
 
 def _planned_sources_for_group(group) -> list[PlannedSource]:

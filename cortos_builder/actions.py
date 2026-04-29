@@ -32,3 +32,19 @@ class LinkAction(BuildAction):
    output: Path
    arguments: tuple[str, ...]
    working_directory: Path
+
+
+@dataclass(frozen=True)
+class PartialLinkAction(BuildAction):
+   inputs: tuple[Path, ...]
+   output: Path
+   arguments: tuple[str, ...]
+   working_directory: Path
+
+
+@dataclass(frozen=True)
+class ObjcopyAction(BuildAction):
+   input: Path
+   output: Path
+   arguments: tuple[str, ...]
+   working_directory: Path

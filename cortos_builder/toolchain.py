@@ -35,6 +35,15 @@ class ToolchainSettings:
 
 
 @dataclass(frozen=True)
+class ArchiveSettings:
+   strategy: str
+   exported_symbols_file: str | None
+   gc_using_public_symbols: bool
+   filter_exported_symbols: bool
+   remove_lto_sections: bool
+
+
+@dataclass(frozen=True)
 class Toolchain:
    path: Path
    name: str
@@ -42,6 +51,7 @@ class Toolchain:
    tools: ToolPaths
    flags: ToolchainFlags
    settings: ToolchainSettings
+   archive: ArchiveSettings
 
 
 # -----------------------------------------------------------------------------
@@ -170,7 +180,6 @@ def _merge_toolchain_dicts(parent: dict, child: dict, path: Path) -> dict:
       if isinstance(parent_value, dict) and isinstance(child_value, dict):
          result[key] = _merge_toolchain_tables(parent_value, child_value, path, table_name=key)
       else:
-         # Scalar or list: full override.
          result[key] = _deep_copy_value(child_value)
 
    return result
@@ -189,10 +198,8 @@ def _merge_toolchain_tables(parent: dict, child: dict, path: Path, table_name: s
       if isinstance(parent_value, dict) and isinstance(child_value, dict):
          result[key] = _merge_toolchain_tables(parent_value, child_value, path, table_name)
       else:
-         # Lists and scalars override completely here.
          result[key] = _deep_copy_value(child_value)
 
-   # Apply explicit add/remove semantics for [flags].
    if table_name == "flags":
       _apply_flag_add_remove(result, path)
 
@@ -222,7 +229,6 @@ def _apply_flag_add_remove(flags: dict, path: Path) -> None:
 
       flags[base] = result
 
-   # The resolved dict should no longer expose these operational keys.
    for base in bases:
       flags.pop(f"{base}_add", None)
       flags.pop(f"{base}_remove", None)
@@ -238,6 +244,7 @@ def _validate_and_build_toolchain(path: Path, data: dict) -> Toolchain:
    tools = data.get("tools", {})
    flags = data.get("flags", {})
    settings = data.get("settings", {})
+   archive = data.get("archive", {})
 
    if not isinstance(tools, dict):
       raise ValueError(f"{path}: expected [tools] table")
@@ -245,10 +252,15 @@ def _validate_and_build_toolchain(path: Path, data: dict) -> Toolchain:
       raise ValueError(f"{path}: expected [flags] table")
    if not isinstance(settings, dict):
       raise ValueError(f"{path}: expected [settings] table")
+   if not isinstance(archive, dict):
+      raise ValueError(f"{path}: expected [archive] table")
 
    _validate_tools_table(tools, path)
    _validate_flags_table(flags, path)
    _validate_settings_table(settings, path)
+   _validate_archive_table(archive, path)
+
+   strategy = _optional_str(archive, "strategy", path) or "simple"
 
    return Toolchain(
       path=path,
@@ -274,6 +286,13 @@ def _validate_and_build_toolchain(path: Path, data: dict) -> Toolchain:
          warnings_as_errors=_require_bool(settings, "warnings_as_errors", path),
          use_modules=_require_bool(settings, "use_modules", path),
       ),
+      archive=ArchiveSettings(
+         strategy=strategy,
+         exported_symbols_file=_optional_str(archive, "exported_symbols_file", path),
+         gc_using_public_symbols=_optional_bool(archive, "gc_using_public_symbols", path, default=False),
+         filter_exported_symbols=_optional_bool(archive, "filter_exported_symbols", path, default=False),
+         remove_lto_sections=_optional_bool(archive, "remove_lto_sections", path, default=False),
+      ),
    )
 
 
@@ -281,7 +300,7 @@ def _validate_and_build_toolchain(path: Path, data: dict) -> Toolchain:
 # Validation helpers
 # -----------------------------------------------------------------------------
 
-_ALLOWED_TOP_LEVEL_KEYS = {"name", "extends", "tools", "flags", "settings"}
+_ALLOWED_TOP_LEVEL_KEYS = {"name", "extends", "tools", "flags", "settings", "archive"}
 _ALLOWED_TOOL_KEYS = {"cc", "cxx", "ar", "asm"}
 _ALLOWED_FLAG_KEYS = {
    "common", "common_add", "common_remove",
@@ -296,6 +315,17 @@ _ALLOWED_SETTINGS_KEYS = {
    "optimization",
    "warnings_as_errors",
    "use_modules",
+}
+_ALLOWED_ARCHIVE_KEYS = {
+   "strategy",
+   "exported_symbols_file",
+   "gc_using_public_symbols",
+   "filter_exported_symbols",
+   "remove_lto_sections",
+}
+_ALLOWED_ARCHIVE_STRATEGIES = {
+   "simple",
+   "lto_pruned",
 }
 
 
@@ -327,6 +357,21 @@ def _validate_settings_table(data: dict, path: Path) -> None:
       raise ValueError(f"{path}: unknown keys in [settings]: {names}")
 
 
+def _validate_archive_table(data: dict, path: Path) -> None:
+   unknown = set(data) - _ALLOWED_ARCHIVE_KEYS
+   if unknown:
+      names = ", ".join(sorted(unknown))
+      raise ValueError(f"{path}: unknown keys in [archive]: {names}")
+
+   strategy = data.get("strategy")
+   if strategy is not None:
+      if not isinstance(strategy, str):
+         raise ValueError(f"{path}: expected [archive].strategy to be a string")
+      if strategy not in _ALLOWED_ARCHIVE_STRATEGIES:
+         known = ", ".join(sorted(_ALLOWED_ARCHIVE_STRATEGIES))
+         raise ValueError(f"{path}: unknown [archive].strategy '{strategy}'. Known: {known}")
+
+
 def _require_str(data: dict, key: str, path: Path) -> str:
    value = data.get(key)
    if not isinstance(value, str):
@@ -345,6 +390,15 @@ def _optional_str(data: dict, key: str, path: Path) -> str | None:
 
 def _require_bool(data: dict, key: str, path: Path) -> bool:
    value = data.get(key)
+   if not isinstance(value, bool):
+      raise ValueError(f"{path}: expected '{key}' to be a bool")
+   return value
+
+
+def _optional_bool(data: dict, key: str, path: Path, default: bool = False) -> bool:
+   value = data.get(key)
+   if value is None:
+      return default
    if not isinstance(value, bool):
       raise ValueError(f"{path}: expected '{key}' to be a bool")
    return value

@@ -88,8 +88,8 @@ def _plan_archive_pipeline(
          working_directory=working_directory,
          libraries_root=libraries_root,
       )
-   if strategy == "lto_pruned":
-      return _plan_lto_pruned_archive(
+   if strategy == "lto_merged":
+      return _plan_lto_merged_archive(
          resolved=resolved,
          object_files=object_files,
          working_directory=working_directory,
@@ -123,7 +123,7 @@ def _plan_simple_archive(
    ]
 
 
-def _plan_lto_pruned_archive(
+def _plan_lto_merged_archive(
    *,
    resolved: ResolvedInvocation,
    object_files: list[Path],
@@ -131,24 +131,19 @@ def _plan_lto_pruned_archive(
    libraries_root: Path,
 ) -> list:
    tc = resolved.toolchain
+   preserve_lto = resolved.toolchain.archive.preserve_lto_sections
+   linker_output = "rel" if preserve_lto else "nolto-rel"
    archive_name = resolved.profile.output.archive
    archive = (libraries_root / archive_name).resolve()
 
    pipeline_root = (obj_dir(resolved) / "archive").resolve()
-   final_object_stem = "cortos" # Hard-coded for now
+   final_object_stem = "cortos"
 
    mega = (pipeline_root / f"{final_object_stem}.mega_combined.o").resolve()
-   pruned = (pipeline_root / f"{final_object_stem}.pruned.o").resolve()
    filtered = (pipeline_root / f"{final_object_stem}.filtered.o").resolve()
    final_obj = (pipeline_root / f"{final_object_stem}.o").resolve()
 
-   exported_symbols_file = _resolve_exported_symbols_file(resolved)
-   exported_symbols = _load_exported_symbols(exported_symbols_file)
-
-   if tc.archive.gc_using_public_symbols and not exported_symbols:
-      raise ValueError(
-         f"Archive strategy 'lto_pruned' requires at least one exported symbol in: {exported_symbols_file}"
-      )
+   export_file = _resolve_exported_symbols_file(resolved)
 
    actions: list = []
 
@@ -157,7 +152,7 @@ def _plan_lto_pruned_archive(
       "-no-pie",
       "-nostdlib",
       "-flto",
-      "-flinker-output=nolto-rel",
+      "-flinker-output=" + linker_output,
       "-fuse-linker-plugin",
       "-Wl,-r",
       "-o",
@@ -175,31 +170,10 @@ def _plan_lto_pruned_archive(
 
    current_input = mega
 
-   if tc.archive.gc_using_public_symbols:
-      gc_root_flags = tuple(f"--undefined={sym}" for sym in exported_symbols)
-      prune_args = (
-         "ld",
-         "-r",
-         "--gc-sections",
-         *gc_root_flags,
-         "-o",
-         str(pruned),
-         str(current_input),
-      )
-      actions.append(
-         PartialLinkAction(
-            inputs=(current_input,),
-            output=pruned,
-            arguments=prune_args,
-            working_directory=working_directory,
-         )
-      )
-      current_input = pruned
-
    if tc.archive.filter_exported_symbols:
       filter_args = (
          "objcopy",
-         f"--keep-global-symbols={exported_symbols_file}",
+         f"--keep-global-symbols={export_file}",
          str(current_input),
          str(filtered),
       )
@@ -245,8 +219,6 @@ def _plan_lto_pruned_archive(
    )
 
    return actions
-
-
 def _resolve_exported_symbols_file(resolved: ResolvedInvocation) -> Path:
    configured = resolved.toolchain.archive.exported_symbols_file
    if configured:

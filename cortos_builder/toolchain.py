@@ -38,9 +38,8 @@ class ToolchainSettings:
 class ArchiveSettings:
    strategy: str
    exported_symbols_file: str | None
-   gc_using_public_symbols: bool
    filter_exported_symbols: bool
-   remove_lto_sections: bool
+   preserve_lto_sections: bool
 
 
 @dataclass(frozen=True)
@@ -289,9 +288,8 @@ def _validate_and_build_toolchain(path: Path, data: dict) -> Toolchain:
       archive=ArchiveSettings(
          strategy=strategy,
          exported_symbols_file=_optional_str(archive, "exported_symbols_file", path),
-         gc_using_public_symbols=_optional_bool(archive, "gc_using_public_symbols", path, default=False),
          filter_exported_symbols=_optional_bool(archive, "filter_exported_symbols", path, default=False),
-         remove_lto_sections=_optional_bool(archive, "remove_lto_sections", path, default=False),
+         preserve_lto_sections=_optional_bool(archive, "preserve_lto_sections", path, default=False),
       ),
    )
 
@@ -319,13 +317,12 @@ _ALLOWED_SETTINGS_KEYS = {
 _ALLOWED_ARCHIVE_KEYS = {
    "strategy",
    "exported_symbols_file",
-   "gc_using_public_symbols",
    "filter_exported_symbols",
-   "remove_lto_sections",
+   "preserve_lto_sections",
 }
 _ALLOWED_ARCHIVE_STRATEGIES = {
    "simple",
-   "lto_pruned",
+   "lto_merged",
 }
 
 

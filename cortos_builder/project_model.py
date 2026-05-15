@@ -2,6 +2,8 @@ from dataclasses import dataclass
 from pathlib import Path
 import tomllib
 
+from cortos_builder.profile import Profile
+
 
 @dataclass(frozen=True)
 class HeaderExport:
@@ -259,7 +261,7 @@ def load_features(profile) -> dict[str, Feature]:
    return result
 
 
-def select_project(profile) -> SelectedProject:
+def select_project(profile: Profile) -> SelectedProject:
    kernel = load_kernel(profile)
    port_component = load_port_component(profile)
    time_component = load_time_component(profile)

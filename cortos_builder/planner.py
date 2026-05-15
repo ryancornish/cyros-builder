@@ -39,8 +39,7 @@ def plan_build(resolved: ResolvedInvocation) -> list:
    archive_object_files: list[Path] = []
 
    for src in ordered_sources:
-      obj = _object_path_for(objects_root, src.path, Path.cwd(), src.kind)
-
+      obj = _object_path_for(objects_root, src.path, resolved.profile.layout.source_root, src.kind)
       args = _compile_args(tc, resolved, src.path, obj)
       cwd = modules_root.resolve()
 
@@ -223,12 +222,12 @@ def _resolve_exported_symbols_file(resolved: ResolvedInvocation) -> Path:
    if configured:
       candidate = Path(configured)
       if not candidate.is_absolute():
-         candidate = (resolved.profile.path.parent / ".." / candidate).resolve()
+         candidate = (resolved.profile_root / ".." / candidate).resolve()
       else:
          candidate = candidate.resolve()
       return candidate
 
-   return (resolved.profile.path.parent / "../exports" / "public_symbols.txt").resolve()
+   return (resolved.profile_root / "../exports" / "public_symbols.txt").resolve()
 
 
 def _load_exported_symbols(path: Path) -> list[str]:
@@ -346,7 +345,7 @@ def _compile_args(tc, resolved: ResolvedInvocation, source: Path, output: Path) 
    )
 
 
-def _object_path_for(obj_dir: Path, source: Path, project_root: Path, kind: str) -> Path:
-   rel = source.resolve().relative_to(project_root.resolve())
+def _object_path_for(obj_dir: Path, source: Path, source_root: Path, kind: str) -> Path:
+   rel = source.resolve().relative_to(source_root.resolve()) # This might be overkill now
    suffix = ".ifc.o" if kind == "module_interface" else ".o"
    return (obj_dir / rel).with_suffix(suffix)

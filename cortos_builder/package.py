@@ -47,7 +47,7 @@ def build_manifest(resolved: ResolvedInvocation) -> BuildManifest:
 
    return BuildManifest(
       name="cortos",
-      profile_name=resolved.profile.profile.name,
+      profile_name=resolved.profile.name,
       toolchain_name=resolved.selected_toolchain_name,
       compiler_family=family,
       archive=lib_dir(resolved) / resolved.profile.output.archive,

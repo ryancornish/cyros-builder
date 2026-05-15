@@ -2,6 +2,7 @@ from argparse import ArgumentParser, Namespace
 
 from cortos_builder.commands.base import (
    Command,
+   add_config_arg,
    add_jobs_arg,
    add_profile_arg,
    add_root_arg,
@@ -16,7 +17,7 @@ from cortos_builder.package import build_manifest
 from cortos_builder.planner import plan_build
 from cortos_builder.resolve import resolve_profile_and_toolchain
 from cortos_builder.ui import print_action_plan
-
+import traceback
 
 class BuildCommand(Command):
    name = "build"
@@ -26,6 +27,7 @@ class BuildCommand(Command):
       add_root_arg(parser, required=False)
       add_profile_arg(parser, required=True)
       add_toolchain_arg(parser, required=False)
+      add_config_arg(parser, required=False)
       add_jobs_arg(parser)
       add_verbose_arg(parser)
 
@@ -51,7 +53,7 @@ class BuildCommand(Command):
          populate_include_tree(resolved)
          print(f"Populated include tree: {include_dir(resolved)}")
       except Exception as exc:
-         print(f"Failed to populate include tree: {exc}")
+         print(f"Failed to populate include tree: {exc} {traceback.print_exc()}")
          return 1
 
       try:
@@ -60,14 +62,10 @@ class BuildCommand(Command):
          print(f"Failed to plan build: {exc}")
          return 1
 
-      print_action_plan(actions, resolved.project_root)
+      print_action_plan(actions)
 
       try:
-         execute_actions(
-               actions,
-               verbose=args.verbose,
-               project_root=resolved.project_root,
-         )
+         execute_actions(actions, verbose=args.verbose)
       except Exception as exc:
          print(f"Build failed: {exc}")
          return 1

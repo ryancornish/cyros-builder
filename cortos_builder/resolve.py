@@ -8,30 +8,36 @@ from cortos_builder.toolchain import Toolchain, resolve_toolchain
 
 @dataclass(frozen=True)
 class ResolvedInvocation:
-   project_root: Path
    profile: Profile
    toolchain: Toolchain
    selected_toolchain_name: str
    cli_overrode_toolchain: bool
+   cli_overrode_config: bool
 
 
 def resolve_profile_and_toolchain(args: Namespace) -> ResolvedInvocation:
    profile = load_profile(Path(args.profile))
-   project_root = profile.layout.project_root
 
-   toolchain_name = args.toolchain or profile.default_toolchain
-   if toolchain_name is None:
+   toolchain_path = args.toolchain or profile.profile.toolchain
+   if toolchain_path is None:
       raise ValueError(
          "No toolchain specified. "
-         "Provide --toolchain or set default_toolchain in the profile."
+         "Provide --toolchain or set toolchain in the profile."
       )
 
-   toolchain = resolve_toolchain(toolchain_name, profile.layout.build_root)
+   toolchain = resolve_toolchain(toolchain_path)
+
+   config_path = args.config or profile.profile.config_header
+   if config_path is None:
+      raise ValueError(
+         "No configuration header specified. "
+         "Provide --config or set config_header in the profile."
+      )
 
    return ResolvedInvocation(
-      project_root=project_root,
       profile=profile,
       toolchain=toolchain,
-      selected_toolchain_name=toolchain_name,
+      selected_toolchain_name=toolchain.name,
       cli_overrode_toolchain=(args.toolchain is not None),
+      cli_overrode_config=(args.config is not None)
    )

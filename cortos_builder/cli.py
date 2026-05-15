@@ -6,7 +6,7 @@ from cortos_builder.commands import *
 
 def build_parser() -> argparse.ArgumentParser:
    parser = argparse.ArgumentParser(
-      prog="build-cortos",
+      prog="cortos-builder",
       description="Build tool for CoRTOS.",
    )
 

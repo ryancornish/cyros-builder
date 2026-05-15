@@ -259,18 +259,16 @@ def load_features(profile) -> dict[str, Feature]:
    return result
 
 
-def select_project(root: Path, profile) -> SelectedProject:
-   _ = root  # retained for call-site compatibility
-
+def select_project(profile) -> SelectedProject:
    kernel = load_kernel(profile)
    port_component = load_port_component(profile)
    time_component = load_time_component(profile)
 
    ports = load_ports(profile)
-   if profile.build.port not in ports:
+   if profile.components.port not in ports:
       known = ", ".join(sorted(ports)) or "<none>"
-      raise ValueError(f"Unknown port '{profile.build.port}'. Known ports: {known}")
-   port = ports[profile.build.port]
+      raise ValueError(f"Unknown port '{profile.components.port}'. Known ports: {known}")
+   port = ports[profile.components.port]
 
    if port_component.variants and port.name not in port_component.variants:
       known = ", ".join(port_component.variants)
@@ -280,12 +278,12 @@ def select_project(root: Path, profile) -> SelectedProject:
       )
 
    time_drivers = load_time_drivers(profile)
-   if profile.build.time_driver not in time_drivers:
+   if profile.components.time_driver not in time_drivers:
       known = ", ".join(sorted(time_drivers)) or "<none>"
       raise ValueError(
-         f"Unknown time driver '{profile.build.time_driver}'. Known time drivers: {known}"
+         f"Unknown time driver '{profile.components.time_driver}'. Known time drivers: {known}"
       )
-   time_driver = time_drivers[profile.build.time_driver]
+   time_driver = time_drivers[profile.components.time_driver]
 
    if time_component.variants and time_driver.name not in time_component.variants:
       known = ", ".join(time_component.variants)

@@ -16,9 +16,8 @@ class PlannedSource:
 
 
 def plan_build(resolved: ResolvedInvocation) -> list:
-   root = resolved.project_root.resolve()
    tc = resolved.toolchain
-   selected = select_project(root, resolved.profile)
+   selected = select_project(resolved.profile)
 
    if tc.settings.use_modules:
       raise NotImplementedError(
@@ -40,7 +39,7 @@ def plan_build(resolved: ResolvedInvocation) -> list:
    archive_object_files: list[Path] = []
 
    for src in ordered_sources:
-      obj = _object_path_for(objects_root, src.path, root, src.kind)
+      obj = _object_path_for(objects_root, src.path, Path.cwd(), src.kind)
 
       args = _compile_args(tc, resolved, src.path, obj)
       cwd = modules_root.resolve()
@@ -65,7 +64,7 @@ def plan_build(resolved: ResolvedInvocation) -> list:
          _plan_archive_pipeline(
             resolved=resolved,
             object_files=archive_object_files,
-            working_directory=root,
+            working_directory=Path.cwd(),
             libraries_root=libraries_root,
          )
       )
@@ -224,12 +223,12 @@ def _resolve_exported_symbols_file(resolved: ResolvedInvocation) -> Path:
    if configured:
       candidate = Path(configured)
       if not candidate.is_absolute():
-         candidate = (resolved.profile.layout.build_root / candidate).resolve()
+         candidate = (resolved.profile.path.parent / ".." / candidate).resolve()
       else:
          candidate = candidate.resolve()
       return candidate
 
-   return (resolved.profile.layout.build_root / "exports" / "public_symbols.txt").resolve()
+   return (resolved.profile.path.parent / "../exports" / "public_symbols.txt").resolve()
 
 
 def _load_exported_symbols(path: Path) -> list[str]:

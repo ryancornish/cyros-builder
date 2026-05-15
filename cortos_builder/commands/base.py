@@ -38,7 +38,15 @@ def add_toolchain_arg(parser: ArgumentParser, *, required: bool = False) -> None
       "-t", "--toolchain",
       type=str,
       required=required,
-      help="Toolchain name, e.g. gcc-debug, gcc-release, clangd.",
+      help="Toolchain name, e.g. gcc-debug, gcc-release, clangd. If not specified, defaults to toolchain within profile.",
+   )
+
+def add_config_arg(parser: ArgumentParser, *, required: bool = False) -> None:
+   parser.add_argument(
+      "-c", "--config",
+      type=str,
+      required=required,
+      help="Path to CoRTOS configuration header. If not specified, defaults to config_header within profile.",
    )
 
 def add_jobs_arg(parser: ArgumentParser) -> None:

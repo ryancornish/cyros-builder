@@ -2,20 +2,23 @@ from dataclasses import dataclass
 from pathlib import Path
 import tomllib
 
+@dataclass(frozen=True)
+class ProfileConfig:
+   name: str
+   toolchain: Path | None
+   config_header: Path | None
+
 
 @dataclass(frozen=True)
 class LayoutConfig:
-   project_root: Path
-   build_root: Path
    source_root: Path
    output_root: Path
 
 
 @dataclass(frozen=True)
-class BuildConfig:
+class ComponentsConfig:
    port: str
    time_driver: str
-   config_header: Path
 
 
 @dataclass(frozen=True)
@@ -31,10 +34,9 @@ class OutputConfig:
 @dataclass(frozen=True)
 class Profile:
    path: Path
-   name: str
-   default_toolchain: str | None
+   profile: ProfileConfig
    layout: LayoutConfig
-   build: BuildConfig
+   components: ComponentsConfig
    features: FeaturesConfig
    output: OutputConfig
 
@@ -55,10 +57,10 @@ def _require_str(data: dict, key: str, profile_path: Path) -> str:
 
 def _optional_str(data: dict, key: str, profile_path: Path) -> str | None:
    value = data.get(key)
-   if value is None:
+   if value is None or value == "":
       return None
    if not isinstance(value, str):
-      raise ValueError(f"{profile_path}: expected '{key}' to be a string if present")
+      raise ValueError(f"{profile_path}: expected '{key}' to be a non-empty string if present")
    return value
 
 
@@ -94,56 +96,42 @@ def load_profile(path: Path) -> Profile:
    if not isinstance(raw, dict):
       raise ValueError(f"{profile_path}: root TOML document must be a table")
 
-   layout_raw = _expect_table(raw, "layout", profile_path)
-   build_raw = _expect_table(raw, "build", profile_path)
-   features_raw = _expect_table(raw, "features", profile_path)
-   output_raw = _expect_table(raw, "output", profile_path)
+   profile_raw    = _expect_table(raw, "profile", profile_path)
+   layout_raw     = _expect_table(raw, "layout", profile_path)
+   components_raw = _expect_table(raw, "components", profile_path)
+   features_raw   = _expect_table(raw, "features", profile_path)
+   output_raw     = _expect_table(raw, "output", profile_path)
 
-   project_root = _require_existing_dir(
-      _resolve_relative(profile_path, _require_str(layout_raw, "project_root", profile_path)),
-      "layout.project_root",
-      profile_path,
-   )
-   build_root = _require_existing_dir(
-      _resolve_relative(profile_path, _require_str(layout_raw, "build_root", profile_path)),
-      "layout.build_root",
-      profile_path,
-   )
+   toolchain_path = _optional_str(profile_raw, "toolchain", profile_path)
+   if toolchain_path is not None:
+      toolchain_path = _require_existing_file((profile_path.parent / toolchain_path).resolve(), "profile.toolchain", profile_path)
+
+   config_header_path = _optional_str(profile_raw, "config_header", profile_path)
+   if config_header_path is not None:
+      config_header_path = _require_existing_file((profile_path.parent / config_header_path).resolve(), "profile.config_header", profile_path)
+
    source_root = _require_existing_dir(
       _resolve_relative(profile_path, _require_str(layout_raw, "source_root", profile_path)),
       "layout.source_root",
       profile_path,
    )
-   output_root = _resolve_relative(profile_path, _require_str(layout_raw, "output_root", profile_path))
+   output_root = _resolve_relative(profile_path.parent, _require_str(layout_raw, "output_root", profile_path))
 
-   config_header = _require_existing_file(
-      (build_root / "configs" / _require_str(build_raw, "config_header", profile_path)).resolve(),
-      "build.config_header",
-      profile_path,
-   )
-
-   toolchain_name = _optional_str(raw, "default_toolchain", profile_path)
-   if toolchain_name is not None:
-      toolchain_path = (build_root / "toolchains" / f"{toolchain_name}.toml").resolve()
-      if not toolchain_path.is_file():
-         raise ValueError(
-            f"{profile_path}: default_toolchain '{toolchain_name}' was not found at {toolchain_path}"
-         )
 
    return Profile(
       path=profile_path,
-      name=_require_str(raw, "name", profile_path),
-      default_toolchain=toolchain_name,
+      profile=ProfileConfig(
+         name=_require_str(profile_raw, "name", profile_path),
+         toolchain=toolchain_path,
+         config_header=config_header_path,
+      ),
       layout=LayoutConfig(
-         project_root=project_root,
-         build_root=build_root,
          source_root=source_root,
          output_root=output_root,
       ),
-      build=BuildConfig(
-         port=_require_str(build_raw, "port", profile_path),
-         time_driver=_require_str(build_raw, "time_driver", profile_path),
-         config_header=config_header,
+      components=ComponentsConfig(
+         port=_require_str(components_raw, "port", profile_path),
+         time_driver=_require_str(components_raw, "time_driver", profile_path),
       ),
       features=FeaturesConfig(
          enable=tuple(_require_str_list(features_raw, "enable", profile_path)),

@@ -11,7 +11,7 @@ from cortos_builder.resolve import ResolvedInvocation
 
 
 def build_manifest(resolved: ResolvedInvocation) -> BuildManifest:
-   selected = select_project(resolved.project_root, resolved.profile)
+   selected = select_project(resolved.profile)
    family = resolved.toolchain.settings.family
    module_format = "gcm.cache" if family == "gcc" else "pcm"
 
@@ -47,7 +47,7 @@ def build_manifest(resolved: ResolvedInvocation) -> BuildManifest:
 
    return BuildManifest(
       name="cortos",
-      profile_name=resolved.profile.name,
+      profile_name=resolved.profile.profile.name,
       toolchain_name=resolved.selected_toolchain_name,
       compiler_family=family,
       archive=lib_dir(resolved) / resolved.profile.output.archive,

@@ -88,10 +88,13 @@ def list_toolchain_names(root: Path | None = None) -> list[str]:
    return sorted(names)
 
 
-def resolve_toolchain(name: str, root: Path | None = None) -> Toolchain:
-   index = _build_toolchain_index(root)
-   merged = _resolve_toolchain_dict(name, index, stack=[])
-   return _validate_and_build_toolchain(index[name].path, merged)
+def resolve_toolchain(toolchain_path: Path) -> Toolchain:
+   if not toolchain_path.is_file():
+      raise FileNotFoundError(f"{toolchain_path} does not exist.")
+
+   index = _build_toolchain_index(toolchain_path.parent.parent) # Hack
+   merged = _resolve_toolchain_dict(toolchain_path.stem, index, stack=[])
+   return _validate_and_build_toolchain(index[toolchain_path.stem].path, merged)
 
 
 # -----------------------------------------------------------------------------

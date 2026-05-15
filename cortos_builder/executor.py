@@ -14,11 +14,11 @@ def execute_actions(actions: list, *, verbose: bool = False, project_root=None) 
          cwd.mkdir(parents=True, exist_ok=True)
 
       if verbose:
-         if project_root is not None:
-            if cwd is not None:
-               print(f"$ (cd {format_command((str(cwd),), project_root)})")
-            print(f"$ {format_command(action.arguments, project_root)}")
-         else:
+         # if project_root is not None:
+         #    if cwd is not None:
+         #       print(f"$ (cd {format_command((str(cwd),), project_root)})")
+         #    print(f"$ {format_command(action.arguments, project_root)}")
+         # else:
             print(f"$ {' '.join(action.arguments)}")
 
       subprocess.run(action.arguments, check=True, cwd=str(cwd) if cwd is not None else None)

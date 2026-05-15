@@ -3,13 +3,6 @@ from pathlib import Path
 import tomllib
 
 @dataclass(frozen=True)
-class ProfileConfig:
-   name: str
-   toolchain: Path | None
-   config_header: Path | None
-
-
-@dataclass(frozen=True)
 class LayoutConfig:
    source_root: Path
    output_root: Path
@@ -34,7 +27,9 @@ class OutputConfig:
 @dataclass(frozen=True)
 class Profile:
    path: Path
-   profile: ProfileConfig
+   name: str
+   toolchain: Path | None
+   config_header: Path | None
    layout: LayoutConfig
    components: ComponentsConfig
    features: FeaturesConfig
@@ -96,17 +91,17 @@ def load_profile(path: Path) -> Profile:
    if not isinstance(raw, dict):
       raise ValueError(f"{profile_path}: root TOML document must be a table")
 
-   profile_raw    = _expect_table(raw, "profile", profile_path)
-   layout_raw     = _expect_table(raw, "layout", profile_path)
+   profile_subsection_raw    = _expect_table(raw, "profile", profile_path)
+   layout_raw = _expect_table(raw, "layout", profile_path)
    components_raw = _expect_table(raw, "components", profile_path)
-   features_raw   = _expect_table(raw, "features", profile_path)
-   output_raw     = _expect_table(raw, "output", profile_path)
+   features_raw = _expect_table(raw, "features", profile_path)
+   output_raw = _expect_table(raw, "output", profile_path)
 
-   toolchain_path = _optional_str(profile_raw, "toolchain", profile_path)
+   toolchain_path = _optional_str(profile_subsection_raw, "toolchain", profile_path)
    if toolchain_path is not None:
       toolchain_path = _require_existing_file((profile_path.parent / toolchain_path).resolve(), "profile.toolchain", profile_path)
 
-   config_header_path = _optional_str(profile_raw, "config_header", profile_path)
+   config_header_path = _optional_str(profile_subsection_raw, "config_header", profile_path)
    if config_header_path is not None:
       config_header_path = _require_existing_file((profile_path.parent / config_header_path).resolve(), "profile.config_header", profile_path)
 
@@ -120,11 +115,9 @@ def load_profile(path: Path) -> Profile:
 
    return Profile(
       path=profile_path,
-      profile=ProfileConfig(
-         name=_require_str(profile_raw, "name", profile_path),
-         toolchain=toolchain_path,
-         config_header=config_header_path,
-      ),
+      name=_require_str(profile_subsection_raw, "name", profile_path),
+      toolchain=toolchain_path,
+      config_header=config_header_path,
       layout=LayoutConfig(
          source_root=source_root,
          output_root=output_root,

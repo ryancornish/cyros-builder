@@ -1,23 +1,40 @@
+import shutil
 from argparse import ArgumentParser, Namespace
-from cortos_builder.commands.base import Command
+
+from cortos_builder.commands.base import (
+   Command,
+   add_config_arg,
+   add_output_arg,
+   add_profile_arg,
+   add_toolchain_arg,
+)
+from cortos_builder.output import build_root
+from cortos_builder.resolve import resolve_invocation
 
 
 class CleanCommand(Command):
    name = "clean"
-   help = "Remove build outputs for a selected profile/toolchain or everything."
+   help = "Remove build outputs for the selected profile and toolchain."
 
    def configure_parser(self, parser: ArgumentParser) -> None:
-      from cortos_builder.cli import add_profile_arg, add_toolchain_arg
-
-      add_profile_arg(parser, required=False)
-      add_toolchain_arg(parser, required=False)
-
-      parser.add_argument(
-         "-a", "--all",
-         action="store_true",
-         help="Remove all build outputs and generated databases.",
-      )
+      add_profile_arg(parser)
+      add_toolchain_arg(parser)
+      add_config_arg(parser)
+      add_output_arg(parser)
 
    def run(self, args: Namespace) -> int:
-      print(f"[clean] profile={args.profile} toolchain={args.toolchain} all={args.all}")
+      try:
+         resolved = resolve_invocation(args)
+      except Exception as exc:
+         print(f"Failed to resolve invocation: {exc}")
+         return 1
+
+      target = build_root(resolved)
+
+      if not target.exists():
+         print(f"Nothing to clean: {target}")
+         return 0
+
+      shutil.rmtree(target)
+      print(f"Cleaned: {target}")
       return 0

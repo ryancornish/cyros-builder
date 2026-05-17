@@ -1,10 +1,12 @@
 name = "gcc-debug"
-extends = "gcc-base"
+extends = "gcc-base.toml"
 
 [flags]
-common_add = ["-O0", "-g"]
+common_add = ["-O0", "-g3"]
 
 [settings]
 debug = true
 optimization = "0"
-use_modules = false
+
+[archive]
+strategy = "simple"

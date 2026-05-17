@@ -16,16 +16,7 @@ class Command(ABC):
       pass
 
 
-# Generic arguments
-def add_root_arg(parser: ArgumentParser, *, required: bool = False) -> None:
-   parser.add_argument(
-      "--root",
-      type=Path,
-      required=required,
-      help="Path to the CoRTOS project root. Defaults to the current working directory.",
-   )
-
-def add_profile_arg(parser: ArgumentParser, *, required: bool = False) -> None:
+def add_profile_arg(parser: ArgumentParser, *, required: bool = True) -> None:
    parser.add_argument(
       "-p", "--profile",
       type=Path,
@@ -33,33 +24,46 @@ def add_profile_arg(parser: ArgumentParser, *, required: bool = False) -> None:
       help="Path to a CoRTOS build profile TOML file.",
    )
 
+
 def add_toolchain_arg(parser: ArgumentParser, *, required: bool = False) -> None:
    parser.add_argument(
       "-t", "--toolchain",
-      type=str,
+      type=Path,
       required=required,
-      help="Toolchain name, e.g. gcc-debug, gcc-release, clangd. If not specified, defaults to toolchain within profile.",
+      help="Path to a toolchain TOML file. Overrides the toolchain set in the profile.",
    )
+
 
 def add_config_arg(parser: ArgumentParser, *, required: bool = False) -> None:
    parser.add_argument(
       "-c", "--config",
-      type=str,
+      type=Path,
       required=required,
-      help="Path to CoRTOS configuration header. If not specified, defaults to config_header within profile.",
+      help="Path to a CoRTOS configuration header (.hpp). Overrides config_header in the profile.",
    )
+
+
+def add_output_arg(parser: ArgumentParser, *, required: bool = False) -> None:
+   parser.add_argument(
+      "-o", "--output",
+      type=Path,
+      required=required,
+      help="Output root directory. Overrides output_root in the profile layout.",
+   )
+
 
 def add_jobs_arg(parser: ArgumentParser) -> None:
    parser.add_argument(
-      "--jobs", "-j",
+      "-j", "--jobs",
       type=int,
       default=1,
-      help="Maximum number of parallel jobs (Default: 1).",
+      help="Maximum number of parallel jobs (default: 1).",
    )
+
 
 def add_verbose_arg(parser: ArgumentParser) -> None:
    parser.add_argument(
-      "--verbose", "-v",
+      "-v", "--verbose",
       action="store_true",
-      help="Print detailed command execution output.",
+      help="Print each command before executing it.",
    )

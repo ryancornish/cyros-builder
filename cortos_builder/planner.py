@@ -7,11 +7,10 @@ from cortos_builder.resolve import ResolvedInvocation
 
 
 class PlannedSource:
-   def __init__(self, component: str, path: Path, language: str, kind: str, archive: bool):
+   def __init__(self, component: str, path: Path, language: str, archive: bool):
       self.component = component
       self.path = path
       self.language = language
-      self.kind = kind
       self.archive = archive
 
 
@@ -19,15 +18,8 @@ def plan_build(resolved: ResolvedInvocation) -> list:
    tc = resolved.toolchain
    selected = select_project(resolved.profile)
 
-   if tc.settings.use_modules:
-      raise NotImplementedError(
-         "Explicit-source planner currently supports non-module builds only. "
-         "Reintroduce module scanning/ordering before enabling use_modules=true."
-      )
-
    objects_root = obj_dir(resolved)
    libraries_root = lib_dir(resolved)
-   modules_root = module_dir(resolved)
 
    planned_sources: list[PlannedSource] = []
    for group in iter_source_groups(selected):
@@ -39,9 +31,8 @@ def plan_build(resolved: ResolvedInvocation) -> list:
    archive_object_files: list[Path] = []
 
    for src in ordered_sources:
-      obj = _object_path_for(objects_root, src.path, resolved.profile.layout.source_root, src.kind)
+      obj = _object_path_for(objects_root, src.path, resolved.profile.layout.source_root)
       args = _compile_args(tc, resolved, src.path, obj)
-      cwd = modules_root.resolve()
 
       actions.append(
          CompileAction(
@@ -49,9 +40,9 @@ def plan_build(resolved: ResolvedInvocation) -> list:
             source=src.path,
             output=obj,
             language=src.language,
-            kind=src.kind,
+            kind="translation_unit",
             arguments=args,
-            working_directory=cwd,
+            working_directory=objects_root.resolve(),
          )
       )
 
@@ -137,7 +128,7 @@ def _plan_lto_merged_archive(
    pipeline_root = (obj_dir(resolved) / "archive").resolve()
    final_object_stem = "cortos"
 
-   mega = (pipeline_root / f"{final_object_stem}.mega_combined.o").resolve()
+   mega    = (pipeline_root / f"{final_object_stem}.mega_combined.o").resolve()
    filtered = (pipeline_root / f"{final_object_stem}.filtered.o").resolve()
    final_obj = (pipeline_root / f"{final_object_stem}.o").resolve()
 
@@ -217,6 +208,8 @@ def _plan_lto_merged_archive(
    )
 
    return actions
+
+
 def _resolve_exported_symbols_file(resolved: ResolvedInvocation) -> Path:
    configured = resolved.toolchain.archive.exported_symbols_file
    if configured:
@@ -228,29 +221,6 @@ def _resolve_exported_symbols_file(resolved: ResolvedInvocation) -> Path:
       return candidate
 
    return (resolved.profile_root / "../exports" / "public_symbols.txt").resolve()
-
-
-def _load_exported_symbols(path: Path) -> list[str]:
-   if not path.is_file():
-      raise FileNotFoundError(
-         f"Missing exported symbols file for archive pipeline: {path}"
-      )
-
-   result: list[str] = []
-   for line in path.read_text(encoding="utf-8").splitlines():
-      text = line.strip()
-      if not text or text.startswith("#"):
-         continue
-      result.append(text)
-
-   seen: set[str] = set()
-   ordered: list[str] = []
-   for sym in result:
-      if sym not in seen:
-         seen.add(sym)
-         ordered.append(sym)
-
-   return ordered
 
 
 def _planned_sources_for_group(group) -> list[PlannedSource]:
@@ -267,7 +237,6 @@ def _planned_sources_for_group(group) -> list[PlannedSource]:
             component=group.name,
             path=resolved,
             language=_language_for(resolved),
-            kind="translation_unit",
             archive=True,
          )
       )
@@ -282,7 +251,6 @@ def _planned_sources_for_group(group) -> list[PlannedSource]:
             component=group.name,
             path=resolved,
             language=_language_for(resolved),
-            kind="translation_unit",
             archive=False,
          )
       )
@@ -345,7 +313,6 @@ def _compile_args(tc, resolved: ResolvedInvocation, source: Path, output: Path) 
    )
 
 
-def _object_path_for(obj_dir: Path, source: Path, source_root: Path, kind: str) -> Path:
-   rel = source.resolve().relative_to(source_root.resolve()) # This might be overkill now
-   suffix = ".ifc.o" if kind == "module_interface" else ".o"
-   return (obj_dir / rel).with_suffix(suffix)
+def _object_path_for(obj_dir: Path, source: Path, source_root: Path) -> Path:
+   rel = source.resolve().relative_to(source_root.resolve())
+   return (obj_dir / rel).with_suffix(".o")

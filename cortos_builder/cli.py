@@ -1,7 +1,12 @@
 import argparse
-from pathlib import Path
-from typing import Iterable
-from cortos_builder.commands import *
+from cortos_builder.commands import (
+   BuildCommand,
+   CleanCommand,
+   ExportIncludesCommand,
+   GenDbCommand,
+   ShowCommand,
+   TestCommand,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -19,13 +24,10 @@ def build_parser() -> argparse.ArgumentParser:
    commands = [
       BuildCommand(),
       CleanCommand(),
-      TestCommand(),
       GenDbCommand(),
       ExportIncludesCommand(),
       ShowCommand(),
-      ListProfilesCommand(),
-      ListToolchainsCommand(),
-      ListComponentsCommand(),
+      TestCommand(),
    ]
 
    for cmd in commands:
@@ -43,9 +45,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> int:
    parser = build_parser()
    args = parser.parse_args()
-
-   cmd = args._command_obj
-   return cmd.run(args)
+   return args._command_obj.run(args)
 
 
 if __name__ == "__main__":

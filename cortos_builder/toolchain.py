@@ -31,7 +31,6 @@ class ToolchainSettings:
    debug: bool
    optimization: str
    warnings_as_errors: bool
-   use_modules: bool
 
 
 @dataclass(frozen=True)
@@ -46,7 +45,7 @@ class ArchiveSettings:
 class Toolchain:
    path: Path
    name: str
-   extends: str | None
+   extends: Path | None   # resolved absolute path to parent .toml, or None
    tools: ToolPaths
    flags: ToolchainFlags
    settings: ToolchainSettings
@@ -54,122 +53,57 @@ class Toolchain:
 
 
 # -----------------------------------------------------------------------------
-# Raw parsed model
-# -----------------------------------------------------------------------------
-
-@dataclass(frozen=True)
-class RawToolchain:
-   path: Path
-   name: str
-   extends: str | None
-   data: dict
-
-
-# -----------------------------------------------------------------------------
 # Public API
 # -----------------------------------------------------------------------------
 
-def find_toolchain_paths(root: Path | None = None) -> list[Path]:
-   base = (root or Path.cwd()).resolve()
-   directory = base / "toolchains"
-   if not directory.is_dir():
-      return []
-   return sorted(
-      p for p in directory.iterdir()
-      if p.is_file() and p.suffix == ".toml"
-   )
-
-
-def list_toolchain_names(root: Path | None = None) -> list[str]:
-   names: list[str] = []
-   for path in find_toolchain_paths(root):
-      raw = load_raw_toolchain(path)
-      names.append(raw.name)
-   return sorted(names)
-
-
 def resolve_toolchain(toolchain_path: Path) -> Toolchain:
+   """
+   Resolve a toolchain from a path to a .toml file.
+   Inheritance is resolved by following `extends` as a path relative to the
+   child toolchain file — no directory scanning or name-based lookup.
+   """
+   toolchain_path = toolchain_path.resolve()
    if not toolchain_path.is_file():
-      raise FileNotFoundError(f"{toolchain_path} does not exist.")
+      raise FileNotFoundError(f"Toolchain file not found: {toolchain_path}")
 
-   index = _build_toolchain_index(toolchain_path.parent.parent) # Hack
-   merged = _resolve_toolchain_dict(toolchain_path.stem, index, stack=[])
-   return _validate_and_build_toolchain(index[toolchain_path.stem].path, merged)
-
-
-# -----------------------------------------------------------------------------
-# Loading raw TOML
-# -----------------------------------------------------------------------------
-
-def load_raw_toolchain(path: Path) -> RawToolchain:
-   toolchain_path = path.resolve()
-
-   with toolchain_path.open("rb") as f:
-      raw = tomllib.load(f)
-
-   if not isinstance(raw, dict):
-      raise ValueError(f"{toolchain_path}: root TOML document must be a table")
-
-   _validate_top_level_keys(raw, toolchain_path)
-
-   name = _require_str(raw, "name", toolchain_path)
-   extends = _optional_str(raw, "extends", toolchain_path)
-
-   return RawToolchain(
-      path=toolchain_path,
-      name=name,
-      extends=extends,
-      data=raw,
-   )
-
-
-def _build_toolchain_index(root: Path | None = None) -> dict[str, RawToolchain]:
-   index: dict[str, RawToolchain] = {}
-
-   for path in find_toolchain_paths(root):
-      raw = load_raw_toolchain(path)
-      if raw.name in index:
-         raise ValueError(
-               f"Duplicate toolchain name '{raw.name}' in:\n"
-               f"  {index[raw.name].path}\n"
-               f"  {raw.path}"
-         )
-      index[raw.name] = raw
-
-   return index
+   merged, extends_path = _load_and_merge(toolchain_path, stack=[])
+   return _build_toolchain(toolchain_path, merged, extends_path)
 
 
 # -----------------------------------------------------------------------------
-# Inheritance resolution
+# Loading and inheritance
 # -----------------------------------------------------------------------------
 
-def _resolve_toolchain_dict(
-   name: str,
-   index: dict[str, RawToolchain],
-   stack: list[str],
-) -> dict:
-   if name not in index:
-      known = ", ".join(sorted(index))
-      raise ValueError(f"Unknown toolchain '{name}'. Known toolchains: {known}")
-
-   if name in stack:
-      cycle = " -> ".join([*stack, name])
+def _load_and_merge(path: Path, stack: list[Path]) -> tuple[dict, Path | None]:
+   """
+   Recursively load a toolchain file and merge it with its parent.
+   Returns (merged_data, direct_parent_path | None).
+   """
+   if path in stack:
+      cycle = " -> ".join(str(p) for p in [*stack, path])
       raise ValueError(f"Toolchain inheritance cycle detected: {cycle}")
 
-   raw = index[name]
-   parent_name = raw.extends
+   raw = _load_toml(path)
+   _validate_top_level_keys(raw, path)
 
-   if parent_name is None:
-      return _deep_copy_dict(raw.data)
+   extends_str = _optional_str(raw, "extends", path)
+   if extends_str is None:
+      return _deep_copy_dict(raw), None
 
-   parent = _resolve_toolchain_dict(parent_name, index, [*stack, name])
-   child = _deep_copy_dict(raw.data)
+   extends_path = (path.parent / extends_str).resolve()
+   if not extends_path.is_file():
+      raise FileNotFoundError(
+         f"{path}: extends target not found: {extends_path}\n"
+         f"  (resolved from extends = {extends_str!r})"
+      )
 
-   merged = _merge_toolchain_dicts(parent, child, raw.path)
-   return merged
+   parent_data, _ = _load_and_merge(extends_path, [*stack, path])
+   child_data = _deep_copy_dict(raw)
+   merged = _merge_dicts(parent_data, child_data, path)
+   return merged, extends_path
 
 
-def _merge_toolchain_dicts(parent: dict, child: dict, path: Path) -> dict:
+def _merge_dicts(parent: dict, child: dict, path: Path) -> dict:
    result = _deep_copy_dict(parent)
 
    for key, child_value in child.items():
@@ -178,16 +112,15 @@ def _merge_toolchain_dicts(parent: dict, child: dict, path: Path) -> dict:
          continue
 
       parent_value = result[key]
-
       if isinstance(parent_value, dict) and isinstance(child_value, dict):
-         result[key] = _merge_toolchain_tables(parent_value, child_value, path, table_name=key)
+         result[key] = _merge_table(parent_value, child_value, path, table_name=key)
       else:
          result[key] = _deep_copy_value(child_value)
 
    return result
 
 
-def _merge_toolchain_tables(parent: dict, child: dict, path: Path, table_name: str) -> dict:
+def _merge_table(parent: dict, child: dict, path: Path, table_name: str) -> dict:
    result = _deep_copy_dict(parent)
 
    for key, child_value in child.items():
@@ -196,9 +129,8 @@ def _merge_toolchain_tables(parent: dict, child: dict, path: Path, table_name: s
          continue
 
       parent_value = result[key]
-
       if isinstance(parent_value, dict) and isinstance(child_value, dict):
-         result[key] = _merge_toolchain_tables(parent_value, child_value, path, table_name)
+         result[key] = _merge_table(parent_value, child_value, path, table_name)
       else:
          result[key] = _deep_copy_value(child_value)
 
@@ -212,20 +144,18 @@ def _apply_flag_add_remove(flags: dict, path: Path) -> None:
    bases = ["common", "c", "cxx", "asm", "link"]
 
    for base in bases:
-      base_value = flags.get(base, [])
-      add_value = flags.get(f"{base}_add", [])
+      base_value   = flags.get(base, [])
+      add_value    = flags.get(f"{base}_add", [])
       remove_value = flags.get(f"{base}_remove", [])
 
-      _ensure_str_list(base_value, f"[flags].{base}", path)
-      _ensure_str_list(add_value, f"[flags].{base}_add", path)
+      _ensure_str_list(base_value,   f"[flags].{base}",        path)
+      _ensure_str_list(add_value,    f"[flags].{base}_add",    path)
       _ensure_str_list(remove_value, f"[flags].{base}_remove", path)
 
       result = list(base_value)
-
       if remove_value:
          remove_set = set(remove_value)
          result = [x for x in result if x not in remove_set]
-
       if add_value:
          result.extend(add_value)
 
@@ -237,16 +167,14 @@ def _apply_flag_add_remove(flags: dict, path: Path) -> None:
 
 
 # -----------------------------------------------------------------------------
-# Validation + final conversion
+# Validation + final model construction
 # -----------------------------------------------------------------------------
 
-def _validate_and_build_toolchain(path: Path, data: dict) -> Toolchain:
-   _validate_top_level_keys(data, path)
-
-   tools = data.get("tools", {})
-   flags = data.get("flags", {})
+def _build_toolchain(path: Path, data: dict, extends_path: Path | None) -> Toolchain:
+   tools    = data.get("tools", {})
+   flags    = data.get("flags", {})
    settings = data.get("settings", {})
-   archive = data.get("archive", {})
+   archive  = data.get("archive", {})
 
    if not isinstance(tools, dict):
       raise ValueError(f"{path}: expected [tools] table")
@@ -267,7 +195,7 @@ def _validate_and_build_toolchain(path: Path, data: dict) -> Toolchain:
    return Toolchain(
       path=path,
       name=_require_str(data, "name", path),
-      extends=_optional_str(data, "extends", path),
+      extends=extends_path,
       tools=ToolPaths(
          cc=_require_str(tools, "cc", path),
          cxx=_require_str(tools, "cxx", path),
@@ -286,7 +214,6 @@ def _validate_and_build_toolchain(path: Path, data: dict) -> Toolchain:
          debug=_require_bool(settings, "debug", path),
          optimization=_require_str(settings, "optimization", path),
          warnings_as_errors=_require_bool(settings, "warnings_as_errors", path),
-         use_modules=_require_bool(settings, "use_modules", path),
       ),
       archive=ArchiveSettings(
          strategy=strategy,
@@ -302,66 +229,50 @@ def _validate_and_build_toolchain(path: Path, data: dict) -> Toolchain:
 # -----------------------------------------------------------------------------
 
 _ALLOWED_TOP_LEVEL_KEYS = {"name", "extends", "tools", "flags", "settings", "archive"}
-_ALLOWED_TOOL_KEYS = {"cc", "cxx", "ar", "asm"}
+_ALLOWED_TOOL_KEYS      = {"cc", "cxx", "ar", "asm"}
 _ALLOWED_FLAG_KEYS = {
    "common", "common_add", "common_remove",
-   "c", "c_add", "c_remove",
-   "cxx", "cxx_add", "cxx_remove",
-   "asm", "asm_add", "asm_remove",
-   "link", "link_add", "link_remove",
+   "c",      "c_add",      "c_remove",
+   "cxx",    "cxx_add",    "cxx_remove",
+   "asm",    "asm_add",    "asm_remove",
+   "link",   "link_add",   "link_remove",
 }
-_ALLOWED_SETTINGS_KEYS = {
-   "family",
-   "debug",
-   "optimization",
-   "warnings_as_errors",
-   "use_modules",
+_ALLOWED_SETTINGS_KEYS = {"family", "debug", "optimization", "warnings_as_errors"}
+_ALLOWED_ARCHIVE_KEYS  = {
+   "strategy", "exported_symbols_file",
+   "filter_exported_symbols", "preserve_lto_sections",
 }
-_ALLOWED_ARCHIVE_KEYS = {
-   "strategy",
-   "exported_symbols_file",
-   "filter_exported_symbols",
-   "preserve_lto_sections",
-}
-_ALLOWED_ARCHIVE_STRATEGIES = {
-   "simple",
-   "lto_merged",
-}
+_ALLOWED_ARCHIVE_STRATEGIES = {"simple", "lto_merged"}
 
 
 def _validate_top_level_keys(data: dict, path: Path) -> None:
    unknown = set(data) - _ALLOWED_TOP_LEVEL_KEYS
    if unknown:
-      names = ", ".join(sorted(unknown))
-      raise ValueError(f"{path}: unknown top-level keys: {names}")
+      raise ValueError(f"{path}: unknown top-level keys: {', '.join(sorted(unknown))}")
 
 
 def _validate_tools_table(data: dict, path: Path) -> None:
    unknown = set(data) - _ALLOWED_TOOL_KEYS
    if unknown:
-      names = ", ".join(sorted(unknown))
-      raise ValueError(f"{path}: unknown keys in [tools]: {names}")
+      raise ValueError(f"{path}: unknown keys in [tools]: {', '.join(sorted(unknown))}")
 
 
 def _validate_flags_table(data: dict, path: Path) -> None:
    unknown = set(data) - _ALLOWED_FLAG_KEYS
    if unknown:
-      names = ", ".join(sorted(unknown))
-      raise ValueError(f"{path}: unknown keys in [flags]: {names}")
+      raise ValueError(f"{path}: unknown keys in [flags]: {', '.join(sorted(unknown))}")
 
 
 def _validate_settings_table(data: dict, path: Path) -> None:
    unknown = set(data) - _ALLOWED_SETTINGS_KEYS
    if unknown:
-      names = ", ".join(sorted(unknown))
-      raise ValueError(f"{path}: unknown keys in [settings]: {names}")
+      raise ValueError(f"{path}: unknown keys in [settings]: {', '.join(sorted(unknown))}")
 
 
 def _validate_archive_table(data: dict, path: Path) -> None:
    unknown = set(data) - _ALLOWED_ARCHIVE_KEYS
    if unknown:
-      names = ", ".join(sorted(unknown))
-      raise ValueError(f"{path}: unknown keys in [archive]: {names}")
+      raise ValueError(f"{path}: unknown keys in [archive]: {', '.join(sorted(unknown))}")
 
    strategy = data.get("strategy")
    if strategy is not None:
@@ -370,6 +281,18 @@ def _validate_archive_table(data: dict, path: Path) -> None:
       if strategy not in _ALLOWED_ARCHIVE_STRATEGIES:
          known = ", ".join(sorted(_ALLOWED_ARCHIVE_STRATEGIES))
          raise ValueError(f"{path}: unknown [archive].strategy '{strategy}'. Known: {known}")
+
+
+# -----------------------------------------------------------------------------
+# TOML + type helpers
+# -----------------------------------------------------------------------------
+
+def _load_toml(path: Path) -> dict:
+   with path.open("rb") as f:
+      raw = tomllib.load(f)
+   if not isinstance(raw, dict):
+      raise ValueError(f"{path}: root TOML document must be a table")
+   return raw
 
 
 def _require_str(data: dict, key: str, path: Path) -> str:

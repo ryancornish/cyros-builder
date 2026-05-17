@@ -20,8 +20,6 @@ class BuildManifest:
 
    public_headers: tuple[str, ...]
    public_modules: tuple[str, ...]
-   resolved_public_modules: tuple[str, ...]
-   modules: dict
    link: dict
 
 
@@ -41,8 +39,6 @@ def write_manifest(path: Path, manifest: BuildManifest) -> None:
       "built_groups": list(manifest.built_groups),
       "public_headers": list(manifest.public_headers),
       "public_modules": list(manifest.public_modules),
-      "resolved_public_modules": list(manifest.resolved_public_modules),
-      "modules": manifest.modules,
       "link": manifest.link,
    }
 

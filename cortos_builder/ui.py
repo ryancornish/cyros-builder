@@ -3,9 +3,12 @@ from pathlib import Path
 from cortos_builder.actions import (
    ArchiveAction,
    CompileAction,
+   CompileTestAction,
    LinkAction,
+   LinkTestAction,
    ObjcopyAction,
    PartialLinkAction,
+   RunTestAction,
 )
 
 
@@ -15,8 +18,8 @@ def print_action_plan(actions: list) -> None:
 
    for i, action in enumerate(actions):
       is_last = i == len(actions) - 1
-      branch = "└─" if is_last else "├─"
-      indent = "   " if is_last else "│  "
+      branch = "\u2514\u2500" if is_last else "\u251c\u2500"
+      indent = "   " if is_last else "\u2502  "
 
       if isinstance(action, CompileAction):
          _print_compile_action(action, branch, indent)
@@ -28,6 +31,12 @@ def print_action_plan(actions: list) -> None:
          _print_partial_link_action(action, branch, indent)
       elif isinstance(action, ObjcopyAction):
          _print_objcopy_action(action, branch, indent)
+      elif isinstance(action, CompileTestAction):
+         _print_compile_test_action(action, branch, indent)
+      elif isinstance(action, LinkTestAction):
+         _print_link_test_action(action, branch, indent)
+      elif isinstance(action, RunTestAction):
+         _print_run_test_action(action, branch, indent)
       else:
          print(f"{branch} unknown action: {type(action).__name__}")
 
@@ -81,3 +90,17 @@ def _rel(path: Path) -> str:
       return str(path.resolve().relative_to(Path.cwd().resolve()))
    except ValueError:
       return str(path.resolve())
+
+def _print_compile_test_action(action: CompileTestAction, branch: str, indent: str) -> None:
+   print(f"{branch} compile-test   [{action.test_name}] {_rel(action.source)}")
+   print(f"{indent}└─ output:      {_rel(action.output)}")
+
+
+def _print_link_test_action(action: LinkTestAction, branch: str, indent: str) -> None:
+   print(f"{branch} link-test      [{action.test_name}]")
+   print(f"{indent}├─ output:      {_rel(action.output)}")
+   print(f"{indent}└─ inputs:      {len(action.inputs)} files")
+
+
+def _print_run_test_action(action: RunTestAction, branch: str, indent: str) -> None:
+   print(f"{branch} run-test       [{action.test_name}] {_rel(action.binary)}")

@@ -36,7 +36,12 @@ def write_compile_commands(path: Path, commands: list[CompileCommand]) -> None:
    tmp.replace(path)
 
 
-def activate_compile_commands(project_root: Path, db_path: Path) -> None:
+def activate_compile_commands(source_root: Path, db_path: Path) -> None:
+   source_root = source_root.resolve()
+   db_path = db_path.resolve()
+   # The symlink lives at the project root (source_root's parent), which is
+   # where editors and tools expect to find compile_commands.json.
+   project_root = source_root.parent
    link_path = project_root / "compile_commands.json"
 
    if not db_path.exists():
@@ -45,5 +50,7 @@ def activate_compile_commands(project_root: Path, db_path: Path) -> None:
    if link_path.exists() or link_path.is_symlink():
       link_path.unlink()
 
+   # Relative path from the symlink's containing directory to the target,
+   # so the symlink remains valid regardless of where the user invokes the tool.
    rel_target = os.path.relpath(db_path, project_root)
    link_path.symlink_to(rel_target)

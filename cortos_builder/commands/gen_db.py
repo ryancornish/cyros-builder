@@ -69,7 +69,7 @@ class GenDbCommand(Command):
       if args.activate:
          try:
             activate_compile_commands(resolved.profile.layout.source_root, db_path)
-            print(f"Activated: {resolved.profile.layout.source_root / 'compile_commands.json'}")
+            print(f"Activated: {resolved.profile.layout.source_root.parent / 'compile_commands.json'}")
          except Exception as exc:
             print(f"Failed to activate compile database: {exc}")
             return 1

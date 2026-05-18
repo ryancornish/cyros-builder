@@ -212,15 +212,18 @@ def _plan_lto_merged_archive(
 
 def _resolve_exported_symbols_file(resolved: ResolvedInvocation) -> Path:
    configured = resolved.toolchain.archive.exported_symbols_file
-   if configured:
-      candidate = Path(configured)
-      if not candidate.is_absolute():
-         candidate = (resolved.profile_root / ".." / candidate).resolve()
-      else:
-         candidate = candidate.resolve()
-      return candidate
+   if not configured:
+      raise ValueError(
+         "archive.filter_exported_symbols is true but no "
+         "archive.exported_symbols_file is set in the toolchain."
+      )
 
-   return (resolved.profile_root / "../exports" / "public_symbols.txt").resolve()
+   candidate = Path(configured)
+   if not candidate.is_absolute():
+      # Resolve relative to the toolchain file's own directory.
+      candidate = (resolved.toolchain.path.parent / candidate).resolve()
+
+   return candidate
 
 
 def _planned_sources_for_group(group) -> list[PlannedSource]:

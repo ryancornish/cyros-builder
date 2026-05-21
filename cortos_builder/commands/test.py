@@ -2,14 +2,11 @@ from argparse import ArgumentParser, Namespace
 
 from cortos_builder.commands.base import (
    Command,
-   add_config_arg,
    add_jobs_arg,
-   add_output_arg,
    add_profile_arg,
    add_toolchain_arg,
    add_verbose_arg,
 )
-from cortos_builder.resolve import resolve_invocation
 from cortos_builder.test_model import discover_tests, find_unit_test_root
 from cortos_builder.test_runner import run_all_tests
 
@@ -40,9 +37,18 @@ class TestCommand(Command):
          action="store_true",
          help="List discovered tests without building or running them.",
       )
+      parser.add_argument(
+         "--coverage",
+         action="store_true",
+         help=(
+            "After all tests pass, collect gcda/gcno data and generate a "
+            "merged lcov HTML report. Requires a coverage-instrumented "
+            "toolchain (e.g. gcc-coverage.toml)."
+         ),
+      )
 
    def run(self, args: Namespace) -> int:
-      # Resolve the base invocation.  Config header is not required here
+      # Resolve the base invocation. Config header is not required here
       # because each test supplies its own — we defer that check.
       try:
          resolved = _resolve_without_config(args)
@@ -83,7 +89,24 @@ class TestCommand(Command):
       )
 
       failed = sum(1 for r in results if not r.passed and not r.skipped)
-      return 0 if failed == 0 else 1
+      if failed:
+         return 1
+
+      # Coverage report — only if all tests passed.
+      if args.coverage:
+         print("\nCollecting coverage data...")
+         try:
+            from cortos_builder.coverage import generate_coverage_report
+            generate_coverage_report(
+               resolved=resolved,
+               tests=tests,
+               verbose=args.verbose,
+            )
+         except Exception as exc:
+            print(f"Coverage report failed: {exc}")
+            return 1
+
+      return 0
 
 
 def _resolve_without_config(args: Namespace):
@@ -113,8 +136,6 @@ def _resolve_without_config(args: Namespace):
 
    output_root = profile.layout.output_root
 
-   # config_header is set to a sentinel None — the test runner will override
-   # it per-test via _make_test_resolved before any build is attempted.
    return ResolvedInvocation(
       profile_root=profile.path.parent,
       profile=profile,

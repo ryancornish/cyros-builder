@@ -79,6 +79,19 @@ def run_all_tests(
          print(f"         {error}")
 
    # --- Phase 2: run ---
+   build_failures = [name for name, (ok, _, _, _) in build_results.items() if not ok]
+   if build_failures:
+      print(f"\n{len(build_failures)} test(s) failed to build — skipping run phase.")
+      return [
+         TestResult(
+            name=test.name,
+            passed=build_results[test.name][0],
+            build_duration_s=build_results[test.name][2],
+            error_message=build_results[test.name][1],
+         )
+         for test in selected
+      ]
+
    print(f"\nRunning {len(selected)} test(s)...\n")
 
    results: list[TestResult] = []

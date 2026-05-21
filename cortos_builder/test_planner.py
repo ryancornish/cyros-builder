@@ -34,12 +34,13 @@ def test_output_root(resolved: ResolvedInvocation, test: TestCase) -> Path:
 def test_build_root(resolved: ResolvedInvocation, test: TestCase) -> Path:
    """
    The toolchain-scoped build root inside the test's output directory.
-   Mirrors the layout used by the normal build so include_dir / lib_dir
-   helpers work when called with a per-test resolved invocation.
+   Expects a per-test resolved invocation (output_root already set to
+   <base>/tests/<test_name>/) — just appends the toolchain name, mirroring
+   what output.build_root() does for normal builds.
 
      <output_root>/tests/<test_name>/<toolchain_name>/
    """
-   return test_output_root(resolved, test) / resolved.selected_toolchain_name
+   return resolved.output_root / resolved.selected_toolchain_name
 
 
 def plan_test(

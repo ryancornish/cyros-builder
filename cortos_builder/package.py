@@ -20,14 +20,14 @@ def build_manifest(resolved: ResolvedInvocation) -> BuildManifest:
 
    selection = {
       "port": selected.port.name,
-      "time_driver": selected.time_driver.name,
+      "time_driver": selected.time_driver.name if selected.time_driver is not None else None,
       "libcortos_features": sorted(selected.features),
    }
 
    built_groups = (
       selected.kernel.name,
       selected.port.name,
-      selected.time_driver.name,
+      *([selected.time_driver.name] if selected.time_driver is not None else []),
       *sorted(selected.features),
    )
 

@@ -108,6 +108,8 @@ def run_all_tests(
          continue
 
       print(f"  {test.name}")
+      # passed implies the build succeeded, which guarantees run_action is set.
+      assert run_action is not None
       run_passed, run_error, run_dur = _run_one(run_action, verbose=verbose)
       results.append(TestResult(
          name=test.name,
@@ -193,9 +195,30 @@ def _run_one(
 
 
 def _make_test_resolved(base: ResolvedInvocation, test: TestCase) -> ResolvedInvocation:
+   """
+   Build a per-test ResolvedInvocation.
+
+   The config header and output root are always overridden per-test. The
+   time driver is resolved with this precedence:
+     1. test.toml [components].time_driver, if set
+     2. the profile's components.time_driver, if set
+     3. None — no time driver compiled in (fine for kernel/port tests)
+
+   If the test.toml overrides the time driver, the profile is rebuilt with
+   an updated ComponentsConfig so select_project() picks it up.
+   """
+   import dataclasses
+
+   profile = base.profile
+   if test.time_driver is not None:
+      new_components = dataclasses.replace(
+         profile.components, time_driver=test.time_driver
+      )
+      profile = dataclasses.replace(profile, components=new_components)
+
    return ResolvedInvocation(
       profile_root=base.profile_root,
-      profile=base.profile,
+      profile=profile,
       toolchain=base.toolchain,
       selected_toolchain_name=base.selected_toolchain_name,
       cli_overrode_toolchain=base.cli_overrode_toolchain,

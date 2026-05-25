@@ -38,6 +38,7 @@ class TestCase:
    config: Path        # resolved absolute path to the config header
    system_libraries: tuple[str, ...]   # e.g. ["boost_context", "gtest", "gtest_main"]
    extra_link_flags: tuple[str, ...]   # optional extra flags beyond the toolchain default
+   time_driver: str | None             # [components].time_driver override, or None
 
 
 def find_unit_test_root(source_root: Path) -> Path:
@@ -81,9 +82,14 @@ def load_test_case(path: Path) -> TestCase:
       raise ValueError(f"{toml_path}: root TOML document must be a table")
 
    test_raw = _expect_table(raw, "test", toml_path)
+
    link_raw = raw.get("link", {})
    if not isinstance(link_raw, dict):
       raise ValueError(f"{toml_path}: expected [link] to be a table if present")
+
+   components_raw = raw.get("components", {})
+   if not isinstance(components_raw, dict):
+      raise ValueError(f"{toml_path}: expected [components] to be a table if present")
 
    name   = _require_str(test_raw, "name",   toml_path)
    source = _require_existing_file(
@@ -98,6 +104,8 @@ def load_test_case(path: Path) -> TestCase:
    system_libraries = tuple(_optional_str_list(link_raw, "system_libraries", toml_path))
    extra_link_flags = tuple(_optional_str_list(link_raw, "flags", toml_path))
 
+   time_driver = _optional_str(components_raw, "time_driver", toml_path)
+
    return TestCase(
       path=base,
       name=name,
@@ -105,6 +113,7 @@ def load_test_case(path: Path) -> TestCase:
       config=config,
       system_libraries=system_libraries,
       extra_link_flags=extra_link_flags,
+      time_driver=time_driver,
    )
 
 
@@ -123,6 +132,15 @@ def _require_str(data: dict, key: str, path: Path) -> str:
    value = data.get(key)
    if not isinstance(value, str):
       raise ValueError(f"{path}: expected '{key}' to be a string")
+   return value
+
+
+def _optional_str(data: dict, key: str, path: Path) -> str | None:
+   value = data.get(key)
+   if value is None or value == "":
+      return None
+   if not isinstance(value, str):
+      raise ValueError(f"{path}: expected '{key}' to be a non-empty string if present")
    return value
 
 

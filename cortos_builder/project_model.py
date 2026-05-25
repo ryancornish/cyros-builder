@@ -61,8 +61,8 @@ class SelectedProject:
    kernel: Kernel
    port_component: PortComponent
    port: Port
-   time_component: TimeComponent
-   time_driver: TimeDriver
+   time_component: TimeComponent | None   # None when no time driver is selected
+   time_driver: TimeDriver | None         # None when no time driver is selected
    features: dict[str, Feature]
 
 
@@ -264,7 +264,6 @@ def load_features(profile) -> dict[str, Feature]:
 def select_project(profile: Profile) -> SelectedProject:
    kernel = load_kernel(profile)
    port_component = load_port_component(profile)
-   time_component = load_time_component(profile)
 
    ports = load_ports(profile)
    if profile.components.port not in ports:
@@ -279,20 +278,30 @@ def select_project(profile: Profile) -> SelectedProject:
          f"Declared variants: {known}"
       )
 
-   time_drivers = load_time_drivers(profile)
-   if profile.components.time_driver not in time_drivers:
-      known = ", ".join(sorted(time_drivers)) or "<none>"
-      raise ValueError(
-         f"Unknown time driver '{profile.components.time_driver}'. Known time drivers: {known}"
-      )
-   time_driver = time_drivers[profile.components.time_driver]
+   # Time driver is optional. When components.time_driver is None, no time
+   # driver (and no time component metadata) is loaded or compiled into the
+   # archive. A feature that depends on "time" will fail validation below.
+   time_component: TimeComponent | None = None
+   time_driver: TimeDriver | None = None
 
-   if time_component.variants and time_driver.name not in time_component.variants:
-      known = ", ".join(time_component.variants)
-      raise ValueError(
-         f"Selected time driver '{time_driver.name}' is not declared in time/component.toml variants. "
-         f"Declared variants: {known}"
-      )
+   if profile.components.time_driver is not None:
+      time_component = load_time_component(profile)
+
+      time_drivers = load_time_drivers(profile)
+      if profile.components.time_driver not in time_drivers:
+         known = ", ".join(sorted(time_drivers)) or "<none>"
+         raise ValueError(
+            f"Unknown time driver '{profile.components.time_driver}'. "
+            f"Known time drivers: {known}"
+         )
+      time_driver = time_drivers[profile.components.time_driver]
+
+      if time_component.variants and time_driver.name not in time_component.variants:
+         known = ", ".join(time_component.variants)
+         raise ValueError(
+            f"Selected time driver '{time_driver.name}' is not declared in "
+            f"time/component.toml variants. Declared variants: {known}"
+         )
 
    all_features = load_features(profile)
    selected_features: dict[str, Feature] = {}
@@ -303,12 +312,14 @@ def select_project(profile: Profile) -> SelectedProject:
          raise ValueError(f"Unknown feature '{name}'. Known features: {known}")
       selected_features[name] = all_features[name]
 
-   _validate_feature_dependencies(selected_features)
+   _validate_feature_dependencies(selected_features, has_time_driver=time_driver is not None)
    _validate_source_separation(kernel)
    _validate_source_separation(port_component)
    _validate_source_separation(port)
-   _validate_source_separation(time_component)
-   _validate_source_separation(time_driver)
+   if time_component is not None:
+      _validate_source_separation(time_component)
+   if time_driver is not None:
+      _validate_source_separation(time_driver)
    for feat in selected_features.values():
       _validate_source_separation(feat)
 
@@ -327,8 +338,10 @@ def collect_public_headers(selected: SelectedProject) -> tuple[HeaderExport, ...
    exports.extend(selected.kernel.public_headers)
    exports.extend(selected.port_component.public_headers)
    exports.extend(selected.port.public_headers)
-   exports.extend(selected.time_component.public_headers)
-   exports.extend(selected.time_driver.public_headers)
+   if selected.time_component is not None:
+      exports.extend(selected.time_component.public_headers)
+   if selected.time_driver is not None:
+      exports.extend(selected.time_driver.public_headers)
    for name in sorted(selected.features):
       exports.extend(selected.features[name].public_headers)
    return tuple(exports)
@@ -339,8 +352,10 @@ def collect_public_modules(selected: SelectedProject) -> tuple[str, ...]:
    modules.extend(selected.kernel.public_modules)
    modules.extend(selected.port_component.public_modules)
    modules.extend(selected.port.public_modules)
-   modules.extend(selected.time_component.public_modules)
-   modules.extend(selected.time_driver.public_modules)
+   if selected.time_component is not None:
+      modules.extend(selected.time_component.public_modules)
+   if selected.time_driver is not None:
+      modules.extend(selected.time_driver.public_modules)
    for name in sorted(selected.features):
       modules.extend(selected.features[name].public_modules)
    return tuple(modules)
@@ -349,25 +364,40 @@ def collect_public_modules(selected: SelectedProject) -> tuple[str, ...]:
 def iter_source_groups(selected: SelectedProject):
    yield selected.kernel
    yield selected.port
-   yield selected.time_driver
+   if selected.time_driver is not None:
+      yield selected.time_driver
    for name in sorted(selected.features):
       yield selected.features[name]
 
 
-def iter_archive_source_groups(selected: SelectedProject):
-   yield selected.kernel
-   yield selected.port
-   yield selected.time_driver
-   for name in sorted(selected.features):
-      yield selected.features[name]
+def collect_system_libraries(selected: SelectedProject) -> tuple[str, ...]:
+   seen: set[str] = set()
+   ordered: list[str] = []
+   for lib in selected.port.system_libraries:
+      if lib not in seen:
+         seen.add(lib)
+         ordered.append(lib)
+   return tuple(ordered)
 
 
-def _validate_feature_dependencies(selected_features: dict[str, Feature]) -> None:
+def _validate_feature_dependencies(
+   selected_features: dict[str, Feature],
+   *,
+   has_time_driver: bool,
+) -> None:
    selected_names = set(selected_features)
-
    for feature in selected_features.values():
       for dep in feature.dependencies:
-         if dep in {"kernel", "port", "time"}:
+         if dep == "time":
+            # 'time' is satisfied only if a time driver is selected.
+            if not has_time_driver:
+               raise ValueError(
+                  f"Selected feature '{feature.name}' depends on 'time', "
+                  f"but no time driver is selected. Set components.time_driver "
+                  f"in the profile, or (for unit tests) in the test's test.toml."
+               )
+            continue
+         if dep in {"kernel", "port"}:
             continue
          if dep not in selected_names:
             raise ValueError(
@@ -465,17 +495,3 @@ def _optional_str_list(data: dict, key: str, path: Path, default: list[str] | No
    if not isinstance(value, list) or not all(isinstance(x, str) for x in value):
       raise ValueError(f"{path}: expected '{key}' to be a list of strings")
    return list(value)
-
-
-def collect_system_libraries(selected: SelectedProject) -> tuple[str, ...]:
-   libs: list[str] = []
-   libs.extend(selected.port.system_libraries)
-
-   seen: set[str] = set()
-   ordered: list[str] = []
-   for lib in libs:
-      if lib not in seen:
-         seen.add(lib)
-         ordered.append(lib)
-
-   return tuple(ordered)

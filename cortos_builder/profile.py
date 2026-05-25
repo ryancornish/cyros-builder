@@ -12,7 +12,7 @@ class LayoutConfig:
 @dataclass(frozen=True)
 class ComponentsConfig:
    port: str
-   time_driver: str
+   time_driver: str | None   # None means no time driver — omitted from the archive
 
 
 @dataclass(frozen=True)
@@ -91,7 +91,7 @@ def load_profile(path: Path) -> Profile:
       ),
       components=ComponentsConfig(
          port=_require_str(components_raw, "port", profile_path),
-         time_driver=_require_str(components_raw, "time_driver", profile_path),
+         time_driver=_optional_str(components_raw, "time_driver", profile_path),
       ),
       features=FeaturesConfig(
          enable=tuple(_require_str_list(features_raw, "enable", profile_path)),

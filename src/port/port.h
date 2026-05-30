@@ -1,6 +1,6 @@
 #pragma once
 
-namespace cortos
+namespace cyros
 {
    void PortYield();
 }

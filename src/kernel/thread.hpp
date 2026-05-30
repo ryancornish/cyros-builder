@@ -1,8 +1,8 @@
 #pragma once
 
-#include <cortos/kernel.hpp>
+#include <cyros/kernel.hpp>
 
-namespace cortos
+namespace cyros
 {
    class Thread
    {

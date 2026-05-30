@@ -1,7 +1,7 @@
-#include <cortos/time.hpp>
-#include <cortos/time/simulation.hpp>
+#include <cyros/time.hpp>
+#include <cyros/time/simulation.hpp>
 
-namespace cortos
+namespace cyros
 {
    void SleepFor(TickDuration ticks)
    {

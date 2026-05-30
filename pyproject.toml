@@ -3,9 +3,9 @@ requires = ["setuptools>=69", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "cortos-builder"
+name = "cyros-builder"
 version = "0.1.0"
-description = "A Python build tool for CoRTOS"
+description = "A Python build tool for Cyros"
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [
@@ -25,11 +25,11 @@ classifiers = [
 dependencies = []
 
 [project.scripts]
-cortos-builder = "cortos_builder.cli:main"
+cyros-builder = "cyros_builder.cli:main"
 
 [tool.setuptools]
 include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["cortos_builder*"]
+include = ["cyros_builder*"]

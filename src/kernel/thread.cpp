@@ -1,10 +1,10 @@
 #include "thread.hpp"
 
-#include <cortos/config.hpp>
-#include <cortos/port.h>
-#include <cortos/port/port_traits.h>
+#include <cyros/config.hpp>
+#include <cyros/port.h>
+#include <cyros/port/port_traits.h>
 
-namespace cortos
+namespace cyros
 {
    void Thread::Start()
    {

@@ -1,8 +1,8 @@
 #pragma once
 
-#include <cortos/time.hpp>
+#include <cyros/time.hpp>
 
-namespace cortos
+namespace cyros
 {
    void AdvanceSimulationTicks(TickDuration ticks);
 }

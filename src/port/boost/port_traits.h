@@ -1,4 +1,4 @@
 #pragma once
 
-#define CORTOS_PORT_NAME "boost"
-#define CORTOS_PORT_SIMULATION 1
+#define CYROS_PORT_NAME "boost"
+#define CYROS_PORT_SIMULATION 1

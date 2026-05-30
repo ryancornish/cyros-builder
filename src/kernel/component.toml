@@ -4,7 +4,7 @@ description = "Public microkernel API and private kernel implementation"
 dependencies = ["port"]
 
 public_headers = [
-  "kernel.hpp -> cortos/kernel.hpp",
+  "kernel.hpp -> cyros/kernel.hpp",
 ]
 public_modules = []
 private_modules = []

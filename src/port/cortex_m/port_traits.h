@@ -1,4 +1,4 @@
 #pragma once
 
-#define CORTOS_PORT_NAME "cortex_m"
-#define CORTOS_PORT_SIMULATION 0
+#define CYROS_PORT_NAME "cortex_m"
+#define CYROS_PORT_SIMULATION 0

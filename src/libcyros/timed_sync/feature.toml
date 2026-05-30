@@ -1,0 +1,13 @@
+name = "timed_sync"
+description = "Timed synchronization primitives"
+
+dependencies = ["kernel", "time", "sync"]
+
+public_headers = [
+  "timed_mutex.hpp -> cyros/timed_sync/timed_mutex.hpp",
+]
+public_modules = []
+private_modules = []
+
+source_roots = ["."]
+generated_includes = true

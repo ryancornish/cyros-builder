@@ -1,0 +1,7 @@
+#!/usr/bin/env python3
+
+# This is just a stub in the mean time whilst it is not a proper pip package yet
+
+from cyros_builder.cli import main
+
+raise SystemExit(main())

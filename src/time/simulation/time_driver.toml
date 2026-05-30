@@ -3,8 +3,8 @@ description = "Simulation time driver"
 
 dependencies = ["port"]
 public_headers = [
-  "time.hpp -> cortos/time.hpp",
-  "simulation.hpp -> cortos/time/simulation.hpp",
+  "time.hpp -> cyros/time.hpp",
+  "simulation.hpp -> cyros/time/simulation.hpp",
 ]
 public_modules = []
 private_modules = []

@@ -7,11 +7,21 @@ from cyros_builder.resolve import ResolvedInvocation
 
 
 class PlannedSource:
-   def __init__(self, component: str, path: Path, language: str, archive: bool):
+   def __init__(
+      self,
+      component: str,
+      component_root: Path,
+      path: Path,
+      language: str,
+      archive: bool,
+      private_includes: tuple[Path, ...],
+   ):
       self.component = component
+      self.component_root = component_root
       self.path = path
       self.language = language
       self.archive = archive
+      self.private_includes = private_includes
 
 
 def plan_build(resolved: ResolvedInvocation) -> list:
@@ -31,8 +41,14 @@ def plan_build(resolved: ResolvedInvocation) -> list:
    archive_object_files: list[Path] = []
 
    for src in ordered_sources:
-      obj = _object_path_for(objects_root, src.path, resolved.profile.layout.source_root)
-      args = _compile_args(tc, resolved, src.path, obj)
+      obj = _object_path_for(
+         objects_root,
+         src.path,
+         resolved.profile.layout.source_root,
+         component_name=src.component,
+         component_root=src.component_root,
+      )
+      args = _compile_args(tc, resolved, src, obj)
 
       actions.append(
          CompileAction(
@@ -126,7 +142,7 @@ def _plan_lto_merged_archive(
    archive = (libraries_root / archive_name).resolve()
 
    pipeline_root = (obj_dir(resolved) / "archive").resolve()
-   final_object_stem = "cyros"
+   final_object_stem = "cortos"
 
    mega    = (pipeline_root / f"{final_object_stem}.mega_combined.o").resolve()
    filtered = (pipeline_root / f"{final_object_stem}.filtered.o").resolve()
@@ -230,6 +246,9 @@ def _planned_sources_for_group(group) -> list[PlannedSource]:
    result: list[PlannedSource] = []
    seen: set[Path] = set()
 
+   component_root = group.path.parent
+   private_includes = tuple(p.resolve() for p in group.private_includes)
+
    for src in group.sources:
       resolved = src.resolve()
       if resolved in seen:
@@ -238,9 +257,11 @@ def _planned_sources_for_group(group) -> list[PlannedSource]:
       result.append(
          PlannedSource(
             component=group.name,
+            component_root=component_root,
             path=resolved,
             language=_language_for(resolved),
             archive=True,
+            private_includes=private_includes,
          )
       )
 
@@ -252,9 +273,11 @@ def _planned_sources_for_group(group) -> list[PlannedSource]:
       result.append(
          PlannedSource(
             component=group.name,
+            component_root=component_root,
             path=resolved,
             language=_language_for(resolved),
             archive=False,
+            private_includes=private_includes,
          )
       )
 
@@ -272,12 +295,16 @@ def _language_for(source: Path) -> str:
    return "c++"
 
 
-def _compile_args(tc, resolved: ResolvedInvocation, source: Path, output: Path) -> tuple[str, ...]:
+def _compile_args(
+   tc, resolved: ResolvedInvocation, src: PlannedSource, output: Path
+) -> tuple[str, ...]:
    generated_include_root = include_dir(resolved).resolve()
-   source = source.resolve()
+   source = src.path.resolve()
    output = output.resolve()
 
-   include_flags = ("-I", str(generated_include_root))
+   include_flags: tuple[str, ...] = ("-I", str(generated_include_root))
+   for inc in src.private_includes:
+      include_flags += ("-I", str(inc))
 
    if source.suffix.lower() == ".c":
       return (
@@ -316,6 +343,37 @@ def _compile_args(tc, resolved: ResolvedInvocation, source: Path, output: Path) 
    )
 
 
-def _object_path_for(obj_dir: Path, source: Path, source_root: Path) -> Path:
-   rel = source.resolve().relative_to(source_root.resolve())
-   return (obj_dir / rel).with_suffix(".o")
+def _object_path_for(
+   obj_dir: Path,
+   source: Path,
+   source_root: Path,
+   *,
+   component_name: str,
+   component_root: Path,
+) -> Path:
+   """
+   Compute the object file path for a source file.
+
+   In-tree sources (under source_root) go to obj_dir/<rel-to-source-root>.o.
+   Out-of-tree sources (e.g. vendored external libraries) go to
+   obj_dir/_external/<component_name>/<rel-to-component-root>.o, which gives
+   each component its own namespace and avoids collisions with the in-tree tree.
+   """
+   resolved_source = source.resolve()
+   resolved_source_root = source_root.resolve()
+   try:
+      rel = resolved_source.relative_to(resolved_source_root)
+      return (obj_dir / rel).with_suffix(".o")
+   except ValueError:
+      pass
+
+   # Out-of-source — anchor against the owning component's directory.
+   resolved_component_root = component_root.resolve()
+   try:
+      rel = resolved_source.relative_to(resolved_component_root)
+   except ValueError:
+      # Source is not under the component either (e.g. ../../external/...).
+      # Use just the filename — collisions inside a single component are a
+      # user error anyway.
+      rel = Path(resolved_source.name)
+   return (obj_dir / "_external" / component_name / rel).with_suffix(".o")

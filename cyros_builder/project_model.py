@@ -24,6 +24,7 @@ class SourceGroup:
    sources: tuple[Path, ...]
    sources_excluded_from_archive: tuple[Path, ...]
    generated_includes: bool
+   private_includes: tuple[Path, ...]   # -I dirs applied only to this group's sources
 
 
 @dataclass(frozen=True)
@@ -90,6 +91,10 @@ def load_kernel(profile) -> Kernel:
          values=_optional_str_list(raw, "sources_excluded_from_archive", path),
       ),
       generated_includes=_optional_bool(raw, "generated_includes", path, default=True),
+      private_includes=_resolve_dirs(
+         meta_path=path,
+         values=_optional_str_list(raw, "private_includes", path),
+      ),
    )
 
 
@@ -117,6 +122,10 @@ def load_port_component(profile) -> PortComponent:
          values=_optional_str_list(raw, "sources_excluded_from_archive", path),
       ),
       generated_includes=_optional_bool(raw, "generated_includes", path, default=True),
+      private_includes=_resolve_dirs(
+         meta_path=path,
+         values=_optional_str_list(raw, "private_includes", path),
+      ),
       variants=tuple(_optional_str_list(raw, "variants", path)),
    )
 
@@ -150,6 +159,10 @@ def load_ports(profile) -> dict[str, Port]:
             values=_optional_str_list(raw, "sources_excluded_from_archive", meta),
          ),
          generated_includes=_optional_bool(raw, "generated_includes", meta, default=True),
+         private_includes=_resolve_dirs(
+            meta_path=meta,
+            values=_optional_str_list(raw, "private_includes", meta),
+         ),
          system_libraries=tuple(_optional_str_list(raw, "system_libraries", meta)),
       )
       if port.name in result:
@@ -183,6 +196,10 @@ def load_time_component(profile) -> TimeComponent:
          values=_optional_str_list(raw, "sources_excluded_from_archive", path),
       ),
       generated_includes=_optional_bool(raw, "generated_includes", path, default=True),
+      private_includes=_resolve_dirs(
+         meta_path=path,
+         values=_optional_str_list(raw, "private_includes", path),
+      ),
       variants=tuple(_optional_str_list(raw, "variants", path)),
    )
 
@@ -216,6 +233,10 @@ def load_time_drivers(profile) -> dict[str, TimeDriver]:
             values=_optional_str_list(raw, "sources_excluded_from_archive", meta),
          ),
          generated_includes=_optional_bool(raw, "generated_includes", meta, default=True),
+         private_includes=_resolve_dirs(
+            meta_path=meta,
+            values=_optional_str_list(raw, "private_includes", meta),
+         ),
       )
       if td.name in result:
          raise ValueError(f"Duplicate time driver '{td.name}'")
@@ -226,7 +247,7 @@ def load_time_drivers(profile) -> dict[str, TimeDriver]:
 
 def load_features(profile) -> dict[str, Feature]:
    result: dict[str, Feature] = {}
-   base = (profile.layout.source_root / "libcyros").resolve()
+   base = (profile.layout.source_root / "libcortos").resolve()
    if not base.is_dir():
       return result
 
@@ -253,6 +274,10 @@ def load_features(profile) -> dict[str, Feature]:
             values=_optional_str_list(raw, "sources_excluded_from_archive", meta),
          ),
          generated_includes=_optional_bool(raw, "generated_includes", meta, default=True),
+         private_includes=_resolve_dirs(
+            meta_path=meta,
+            values=_optional_str_list(raw, "private_includes", meta),
+         ),
       )
       if feat.name in result:
          raise ValueError(f"Duplicate feature '{feat.name}'")
@@ -433,6 +458,16 @@ def _resolve_source_roots(meta_path: Path, values: list[str]) -> tuple[Path, ...
 
 
 def _resolve_sources(meta_path: Path, values: list[str]) -> tuple[Path, ...]:
+   base = meta_path.parent
+   return tuple((base / value).resolve() for value in values)
+
+
+def _resolve_dirs(meta_path: Path, values: list[str]) -> tuple[Path, ...]:
+   """
+   Resolve a list of directory paths relative to a TOML file. Unlike sources,
+   we don't require them to exist at load time — they may be generated later,
+   or live alongside an optional external dependency.
+   """
    base = meta_path.parent
    return tuple((base / value).resolve() for value in values)
 

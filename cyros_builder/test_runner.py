@@ -10,7 +10,7 @@ never pollute each other's archives. The flow is two-phase:
       a. Construct a per-test ResolvedInvocation (same profile/toolchain, but
          config_header and output_root overridden for this test).
       b. Populate the include tree for that config.
-      c. plan_build → execute_actions  to produce libcyros.a.
+      c. plan_build → execute_actions  to produce libcortos.a.
       d. plan_test  → execute compile + link actions to produce the binary.
 
   Phase 2 — Run all tests:
@@ -64,11 +64,27 @@ def run_all_tests(
       print("No tests matched the filter." if filter_str else "No tests found.")
       return []
 
+   # Partition into runnable vs skipped based on per-test requirements.
+   active_port = resolved.profile.components.port
+   runnable: list[TestCase] = []
+   skipped_results: list[TestResult] = []
+   for test in selected:
+      skip_reason = _skip_reason(test, active_port=active_port)
+      if skip_reason is not None:
+         skipped_results.append(TestResult(
+            name=test.name, passed=True, skipped=True, skip_reason=skip_reason,
+         ))
+      else:
+         runnable.append(test)
+
    # --- Phase 1: build ---
-   print(f"Building {len(selected)} test(s)...\n")
+   print(f"Building {len(runnable)} test(s)...\n")
+
+   for r in skipped_results:
+      print(f"  [skip] {r.name} ({r.skip_reason})")
 
    build_results: dict[str, tuple[bool, str, float, RunTestAction | None]] = {}
-   for test in selected:
+   for test in runnable:
       passed, error, duration, run_action = _build_one(
          resolved=resolved, test=test, verbose=verbose,
       )
@@ -82,20 +98,22 @@ def run_all_tests(
    build_failures = [name for name, (ok, _, _, _) in build_results.items() if not ok]
    if build_failures:
       print(f"\n{len(build_failures)} test(s) failed to build — skipping run phase.")
-      return [
+      results = skipped_results + [
          TestResult(
             name=test.name,
             passed=build_results[test.name][0],
             build_duration_s=build_results[test.name][2],
             error_message=build_results[test.name][1],
          )
-         for test in selected
+         for test in runnable
       ]
+      _print_summary(results)
+      return results
 
-   print(f"\nRunning {len(selected)} test(s)...\n")
+   print(f"\nRunning {len(runnable)} test(s)...\n")
 
-   results: list[TestResult] = []
-   for test in selected:
+   results = list(skipped_results)
+   for test in runnable:
       passed, error, build_dur, run_action = build_results[test.name]
 
       if not passed:
@@ -134,6 +152,18 @@ def _apply_filter(tests: list[TestCase], filter_str: str | None) -> list[TestCas
    return [t for t in tests if filter_str in t.name]
 
 
+def _skip_reason(test: TestCase, *, active_port: str) -> str | None:
+   """
+   Return a human-readable reason to skip this test, or None to run it.
+   Currently only port compatibility is checked: if the test declares
+   [requires].port and the active profile port is not among them, skip.
+   """
+   if test.required_ports and active_port not in test.required_ports:
+      want = ", ".join(test.required_ports)
+      return f"requires port {want}, active port is {active_port}"
+   return None
+
+
 def _build_one(
    *,
    resolved: ResolvedInvocation,
@@ -141,7 +171,7 @@ def _build_one(
    verbose: bool,
 ) -> tuple[bool, str, float, RunTestAction | None]:
    """
-   Build the cyros archive and compile+link the test binary.
+   Build the cortos archive and compile+link the test binary.
    Returns (success, error_message, duration_s, run_action | None).
    """
    start = time.monotonic()

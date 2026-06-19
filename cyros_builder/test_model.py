@@ -1,16 +1,16 @@
 """
-test_model.py — schema and discovery for cyros unit tests.
+test_model.py — schema and discovery for cortos unit tests.
 
 Each test case is a directory under tests/unit/** that contains a test.toml.
 The test.toml declares what is unique to that test: its source file, the
 config header it needs, and any extra system libraries to link.
 
-Everything else (toolchain, compiler flags, cyros archive) comes from the
+Everything else (toolchain, compiler flags, cortos archive) comes from the
 resolved build invocation passed in by the test runner.
 
-Layout convention (hardcoded — unit tests are internal to cyros):
+Layout convention (hardcoded — unit tests are internal to cortos):
 
-   <source_root>/             e.g. cyros/src/
+   <source_root>/             e.g. cortos/src/
    <source_root>/../tests/unit/
       kernel/
          test_function/
@@ -39,12 +39,13 @@ class TestCase:
    system_libraries: tuple[str, ...]   # e.g. ["boost_context", "gtest", "gtest_main"]
    extra_link_flags: tuple[str, ...]   # optional extra flags beyond the toolchain default
    time_driver: str | None             # [components].time_driver override, or None
+   required_ports: tuple[str, ...]     # [requires].port — empty means any port
 
 
 def find_unit_test_root(source_root: Path) -> Path:
    """
    Return the unit test root directory.
-   Hardcoded as <source_root>/../tests/unit — unit tests are internal to cyros
+   Hardcoded as <source_root>/../tests/unit — unit tests are internal to cortos
    and are not part of the configurable build tree.
    """
    return (source_root / ".." / "tests" / "unit").resolve()
@@ -91,6 +92,10 @@ def load_test_case(path: Path) -> TestCase:
    if not isinstance(components_raw, dict):
       raise ValueError(f"{toml_path}: expected [components] to be a table if present")
 
+   requires_raw = raw.get("requires", {})
+   if not isinstance(requires_raw, dict):
+      raise ValueError(f"{toml_path}: expected [requires] to be a table if present")
+
    name   = _require_str(test_raw, "name",   toml_path)
    source = _require_existing_file(
       (base / _require_str(test_raw, "source", toml_path)).resolve(),
@@ -106,6 +111,8 @@ def load_test_case(path: Path) -> TestCase:
 
    time_driver = _optional_str(components_raw, "time_driver", toml_path)
 
+   required_ports = tuple(_optional_str_or_str_list(requires_raw, "port", toml_path))
+
    return TestCase(
       path=base,
       name=name,
@@ -114,6 +121,7 @@ def load_test_case(path: Path) -> TestCase:
       system_libraries=system_libraries,
       extra_link_flags=extra_link_flags,
       time_driver=time_driver,
+      required_ports=required_ports,
    )
 
 
@@ -151,6 +159,18 @@ def _optional_str_list(data: dict, key: str, path: Path) -> list[str]:
    if not isinstance(value, list) or not all(isinstance(x, str) for x in value):
       raise ValueError(f"{path}: expected '{key}' to be a list of strings")
    return list(value)
+
+
+def _optional_str_or_str_list(data: dict, key: str, path: Path) -> list[str]:
+   """Accept either a single string or a list of strings; return a list."""
+   value = data.get(key)
+   if value is None:
+      return []
+   if isinstance(value, str):
+      return [value] if value else []
+   if isinstance(value, list) and all(isinstance(x, str) for x in value):
+      return list(value)
+   raise ValueError(f"{path}: expected '{key}' to be a string or list of strings")
 
 
 def _require_existing_file(path: Path, desc: str, toml_path: Path) -> Path:

@@ -247,7 +247,7 @@ def load_time_drivers(profile) -> dict[str, TimeDriver]:
 
 def load_features(profile) -> dict[str, Feature]:
    result: dict[str, Feature] = {}
-   base = (profile.layout.source_root / "libcortos").resolve()
+   base = (profile.layout.source_root / "libcyros").resolve()
    if not base.is_dir():
       return result
 

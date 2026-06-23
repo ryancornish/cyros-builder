@@ -38,8 +38,10 @@ class TestCase:
    config: Path        # resolved absolute path to the config header
    system_libraries: tuple[str, ...]   # e.g. ["boost_context", "gtest", "gtest_main"]
    extra_link_flags: tuple[str, ...]   # optional extra flags beyond the toolchain default
-   time_driver: str | None             # [components].time_driver override, or None
-   required_ports: tuple[str, ...]     # [requires].port — empty means any port
+   port_filter: tuple[str, ...]        # Skip test if not belonging to filter
+   # time_driver and features OVERRIDE/EXTEND the profile for this test.
+   time_driver: str | None             # locked driver, or None to use the default
+   features: tuple[str, ...]           # features to compile into the archive
 
 
 def find_unit_test_root(source_root: Path) -> Path:
@@ -92,10 +94,6 @@ def load_test_case(path: Path) -> TestCase:
    if not isinstance(components_raw, dict):
       raise ValueError(f"{toml_path}: expected [components] to be a table if present")
 
-   requires_raw = raw.get("requires", {})
-   if not isinstance(requires_raw, dict):
-      raise ValueError(f"{toml_path}: expected [requires] to be a table if present")
-
    name   = _require_str(test_raw, "name",   toml_path)
    source = _require_existing_file(
       (base / _require_str(test_raw, "source", toml_path)).resolve(),
@@ -109,9 +107,9 @@ def load_test_case(path: Path) -> TestCase:
    system_libraries = tuple(_optional_str_list(link_raw, "system_libraries", toml_path))
    extra_link_flags = tuple(_optional_str_list(link_raw, "flags", toml_path))
 
+   port_filter = tuple(_optional_str_or_str_list(components_raw, "port", toml_path))
    time_driver = _optional_str(components_raw, "time_driver", toml_path)
-
-   required_ports = tuple(_optional_str_or_str_list(requires_raw, "port", toml_path))
+   features = tuple(_optional_str_list(components_raw, "features", toml_path))
 
    return TestCase(
       path=base,
@@ -120,8 +118,9 @@ def load_test_case(path: Path) -> TestCase:
       config=config,
       system_libraries=system_libraries,
       extra_link_flags=extra_link_flags,
+      port_filter=port_filter,
       time_driver=time_driver,
-      required_ports=required_ports,
+      features=features,
    )
 
 

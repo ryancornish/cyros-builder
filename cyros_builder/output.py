@@ -4,7 +4,7 @@ from cyros_builder.resolve import ResolvedInvocation
 
 
 def build_root(resolved: ResolvedInvocation) -> Path:
-   return resolved.output_root / resolved.selected_toolchain_name
+   return resolved.output_root / resolved.profile.name / resolved.selected_toolchain_name
 
 
 def obj_dir(resolved: ResolvedInvocation) -> Path:

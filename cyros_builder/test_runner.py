@@ -22,6 +22,7 @@ any test output appears, making failures easier to read.
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 import time
 from dataclasses import dataclass, field
@@ -158,7 +159,7 @@ def _skip_reason(test: TestCase, *, active_port: str) -> str | None:
 
    Port is a filter (Design A): the test always builds against the profile's
    port. If the test declares a port filter and the active profile port is not
-   among the allowed set, the test is skipped -- it is locked to a port the
+   among the allowed set, the test is skipped — it is locked to a port the
    current profile does not provide.
    """
    if test.port_filter and active_port not in test.port_filter:
@@ -179,6 +180,15 @@ def _build_one(
    """
    start = time.monotonic()
    test_resolved = _make_test_resolved(resolved, test)
+
+   # Wipe this test's output tree before building. The per-test output root is
+   # keyed only on test name + toolchain, NOT on the resolved component
+   # configuration (port/driver/features).
+   try:
+      if test_resolved.output_root.exists():
+         shutil.rmtree(test_resolved.output_root)
+   except Exception as exc:
+      return False, f"Failed to clean test output dir: {exc}", time.monotonic() - start, None
 
    try:
       populate_include_tree(test_resolved)

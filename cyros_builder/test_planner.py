@@ -2,12 +2,12 @@
 test_planner.py — produce the action sequence for a single unit test case.
 
 For each test the sequence is:
-   1. Build cyros archive  (reuses plan_build — handled by the runner)
+   1. Build cortos archive  (reuses plan_build — handled by the runner)
    2. CompileTestAction     — compile the test .cpp into a .o
-   3. LinkTestAction        — link test.o + libcyros.a + system libs → binary
+   3. LinkTestAction        — link test.o + libcortos.a + system libs → binary
    4. RunTestAction         — execute the binary
 
-The runner builds the cyros archive once per test (each test gets its own
+The runner builds the cortos archive once per test (each test gets its own
 isolated output directory because configs differ), then calls plan_test to
 get steps 2-4.
 """
@@ -17,7 +17,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from cyros_builder.actions import CompileTestAction, LinkTestAction, RunTestAction
-from cyros_builder.output import include_dir, lib_dir
+from cyros_builder.output import build_root, include_dir, lib_dir
 from cyros_builder.resolve import ResolvedInvocation
 from cyros_builder.test_model import TestCase
 
@@ -33,14 +33,17 @@ def test_output_root(resolved: ResolvedInvocation, test: TestCase) -> Path:
 
 def test_build_root(resolved: ResolvedInvocation, test: TestCase) -> Path:
    """
-   The toolchain-scoped build root inside the test's output directory.
-   Expects a per-test resolved invocation (output_root already set to
-   <base>/tests/<test_name>/) — just appends the toolchain name, mirroring
-   what output.build_root() does for normal builds.
+   The build root for a test's own object/binary, kept in lockstep with the
+   cyros archive location by delegating to output.build_root(). Expects a
+   per-test resolved invocation (output_root already set to
+   <base>/tests/<test_name>/), so the result is:
 
-     <output_root>/tests/<test_name>/<toolchain_name>/
+     <output_root>/tests/<test_name>/<profile_name>/<toolchain_name>/
+
+   Using build_root() here guarantees the test binary lives in the same tree
+   as the archive it links against — they must never diverge.
    """
-   return resolved.output_root / resolved.selected_toolchain_name
+   return build_root(resolved)
 
 
 def plan_test(
@@ -51,7 +54,7 @@ def plan_test(
    """
    Return [CompileTestAction, LinkTestAction, RunTestAction] for one test.
 
-   The cyros archive is assumed to already exist at the path returned by
+   The cortos archive is assumed to already exist at the path returned by
    lib_dir() for the per-test resolved invocation — the runner is responsible
    for building it first.
    """

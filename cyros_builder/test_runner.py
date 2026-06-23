@@ -155,12 +155,15 @@ def _apply_filter(tests: list[TestCase], filter_str: str | None) -> list[TestCas
 def _skip_reason(test: TestCase, *, active_port: str) -> str | None:
    """
    Return a human-readable reason to skip this test, or None to run it.
-   Currently only port compatibility is checked: if the test declares
-   [requires].port and the active profile port is not among them, skip.
+
+   Port is a filter (Design A): the test always builds against the profile's
+   port. If the test declares a port filter and the active profile port is not
+   among the allowed set, the test is skipped -- it is locked to a port the
+   current profile does not provide.
    """
-   if test.required_ports and active_port not in test.required_ports:
-      want = ", ".join(test.required_ports)
-      return f"requires port {want}, active port is {active_port}"
+   if test.port_filter and active_port not in test.port_filter:
+      want = ", ".join(test.port_filter)
+      return f"locked to port {want}, active port is {active_port}"
    return None
 
 
@@ -226,25 +229,47 @@ def _run_one(
 
 def _make_test_resolved(base: ResolvedInvocation, test: TestCase) -> ResolvedInvocation:
    """
-   Build a per-test ResolvedInvocation.
+   Build a per-test ResolvedInvocation (Design A).
 
-   The config header and output root are always overridden per-test. The
-   time driver is resolved with this precedence:
-     1. test.toml [components].time_driver, if set
-     2. the profile's components.time_driver, if set
-     3. None — no time driver compiled in (fine for kernel/port tests)
+   Always overridden per-test: config header, output root.
 
-   If the test.toml overrides the time driver, the profile is rebuilt with
-   an updated ComponentsConfig so select_project() picks it up.
+   Port: inherited from the profile unchanged. The test never selects its own
+   port; it only filters (see _skip_reason). So we leave components.port alone.
+
+   Time driver: the test's locked driver if it declares one, else the profile's
+   default, else "simulation" as the agnostic fallback.
+
+   Features: the test's declared features REPLACE the profile's feature set
+   (unit tests own their feature configuration entirely).
+
+   The profile is rebuilt with the updated ComponentsConfig / FeaturesConfig so
+   select_project() picks everything up.
    """
    import dataclasses
 
    profile = base.profile
+
+   # --- time driver ---
+   # Precedence: the test's locked driver, then the profile default. If neither
+   # is set, the test gets no time driver UNLESS it enables features (which may
+   # depend on "time"), in which case we fall back to "simulation" so the
+   # dependency resolves. Purely-kernel tests thus build with no driver at all,
+   # keeping their archive minimal.
    if test.time_driver is not None:
-      new_components = dataclasses.replace(
-         profile.components, time_driver=test.time_driver
-      )
-      profile = dataclasses.replace(profile, components=new_components)
+      time_driver: str | None = test.time_driver
+   elif profile.components.time_driver is not None:
+      time_driver = profile.components.time_driver
+   elif test.features:
+      time_driver = "simulation"
+   else:
+      time_driver = None
+
+   new_components = dataclasses.replace(profile.components, time_driver=time_driver)
+   profile = dataclasses.replace(profile, components=new_components)
+
+   # --- features: test declaration replaces the profile's set ---
+   new_features = dataclasses.replace(profile.features, enable=test.features)
+   profile = dataclasses.replace(profile, features=new_features)
 
    return ResolvedInvocation(
       profile_root=base.profile_root,

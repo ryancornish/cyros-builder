@@ -13,7 +13,7 @@ from cyros_builder.test_runner import run_all_tests
 
 class TestCommand(Command):
    name = "test"
-   help = "Build and run Cyros unit tests."
+   help = "Build and run CoRTOS unit tests."
 
    def configure_parser(self, parser: ArgumentParser) -> None:
       add_profile_arg(parser)
@@ -92,14 +92,20 @@ class TestCommand(Command):
       if failed:
          return 1
 
-      # Coverage report — only if all tests passed.
+      # Coverage report — only for tests that actually built and ran.
+      # Skipped tests (e.g. port-locked tests under a non-matching profile)
+      # never produced a build directory, so lcov has nothing to capture there.
       if args.coverage:
-         print("\nCollecting coverage data...")
+         ran_names = {r.name for r in results if not r.skipped}
+         covered_tests = [t for t in tests if t.name in ran_names]
+
+         print(f"\nCollecting coverage data ({len(covered_tests)} test(s), "
+               f"{len(tests) - len(covered_tests)} skipped)...")
          try:
             from cyros_builder.coverage import generate_coverage_report
             generate_coverage_report(
                resolved=resolved,
-               tests=tests,
+               tests=covered_tests,
                verbose=args.verbose,
             )
          except Exception as exc:

@@ -63,6 +63,13 @@ def generate_coverage_report(
       build_root = test_build_root(test_resolved, test)
       info_file  = coverage_root / f"{test.name}.info"
 
+      if not build_root.is_dir():
+         raise FileNotFoundError(
+            f"No build directory for test '{test.name}': {build_root}\n"
+            f"This usually means the test was skipped or did not build — "
+            f"it should not have been passed to generate_coverage_report()."
+         )
+
       _run(
          ["lcov",
           "--capture",

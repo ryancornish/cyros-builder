@@ -21,7 +21,7 @@ def build_manifest(resolved: ResolvedInvocation) -> BuildManifest:
    selection = {
       "port": selected.port.name,
       "time_driver": selected.time_driver.name if selected.time_driver is not None else None,
-      "libcyros_features": sorted(selected.features),
+      "userlib_features": sorted(selected.features),
    }
 
    built_groups = (

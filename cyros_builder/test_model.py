@@ -2,7 +2,7 @@
 test_model.py — schema and discovery for cortos unit tests.
 
 Each test case is a directory under tests/unit/** that contains a test.toml.
-The test.toml declares what is unique to that test: its source file, the
+The test.toml declares what is unique to that test: its source file(s), the
 config header it needs, and any extra system libraries to link.
 
 Everything else (toolchain, compiler flags, cortos archive) comes from the
@@ -32,10 +32,10 @@ from pathlib import Path
 @dataclass(frozen=True)
 class TestCase:
    """A single discovered and validated unit test."""
-   path: Path          # directory containing test.toml
-   name: str           # unique name, e.g. "test_function"
-   source: Path        # resolved absolute path to the .cpp file
-   config: Path        # resolved absolute path to the config header
+   path: Path              # directory containing test.toml
+   name: str               # unique name, e.g. "test_function"
+   sources: tuple[Path, ...]  # resolved absolute paths to the .cpp file(s)
+   config: Path            # resolved absolute path to the config header
    system_libraries: tuple[str, ...]   # e.g. ["boost_context", "gtest", "gtest_main"]
    extra_link_flags: tuple[str, ...]   # optional extra flags beyond the toolchain default
    port_filter: tuple[str, ...]        # Skip test if not belonging to filter
@@ -94,11 +94,16 @@ def load_test_case(path: Path) -> TestCase:
    if not isinstance(components_raw, dict):
       raise ValueError(f"{toml_path}: expected [components] to be a table if present")
 
-   name   = _require_str(test_raw, "name",   toml_path)
-   source = _require_existing_file(
-      (base / _require_str(test_raw, "source", toml_path)).resolve(),
-      "test.source", toml_path,
+   name = _require_str(test_raw, "name", toml_path)
+
+   source_values = _optional_str_or_str_list(test_raw, "source", toml_path)
+   if not source_values:
+      raise ValueError(f"{toml_path}: 'test.source' must list at least one source file")
+   sources = tuple(
+      _require_existing_file((base / value).resolve(), "test.source", toml_path)
+      for value in source_values
    )
+
    config = _require_existing_file(
       (base / _require_str(test_raw, "config", toml_path)).resolve(),
       "test.config", toml_path,
@@ -114,7 +119,7 @@ def load_test_case(path: Path) -> TestCase:
    return TestCase(
       path=base,
       name=name,
-      source=source,
+      sources=sources,
       config=config,
       system_libraries=system_libraries,
       extra_link_flags=extra_link_flags,

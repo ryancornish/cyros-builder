@@ -86,6 +86,7 @@ class TestCommand(Command):
          tests=tests,
          verbose=args.verbose,
          filter_str=args.filter,
+         jobs=args.jobs,
       )
 
       failed = sum(1 for r in results if not r.passed and not r.skipped)

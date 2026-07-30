@@ -54,6 +54,7 @@ def run_all_tests(
    tests: list[TestCase],
    verbose: bool = False,
    filter_str: str | None = None,
+   jobs: int = 1,
 ) -> list[TestResult]:
    """
    Build all tests, then run all tests.
@@ -87,7 +88,7 @@ def run_all_tests(
    build_results: dict[str, tuple[bool, str, float, RunTestAction | None]] = {}
    for test in runnable:
       passed, error, duration, run_action = _build_one(
-         resolved=resolved, test=test, verbose=verbose,
+         resolved=resolved, test=test, verbose=verbose, jobs=jobs,
       )
       build_results[test.name] = (passed, error, duration, run_action)
       status = "ok" if passed else "FAILED"
@@ -173,6 +174,7 @@ def _build_one(
    resolved: ResolvedInvocation,
    test: TestCase,
    verbose: bool,
+   jobs: int = 1,
 ) -> tuple[bool, str, float, RunTestAction | None]:
    """
    Build the cortos archive and compile+link the test binary.
@@ -192,7 +194,7 @@ def _build_one(
 
    try:
       populate_include_tree(test_resolved)
-      execute_actions(plan_build(test_resolved), verbose=verbose)
+      execute_actions(plan_build(test_resolved), verbose=verbose, jobs=jobs)
    except Exception as exc:
       return False, f"Archive build failed: {exc}", time.monotonic() - start, None
 
@@ -201,7 +203,7 @@ def _build_one(
    run_action = next(a for a in test_actions if isinstance(a, RunTestAction))
 
    try:
-      execute_actions(build_actions, verbose=verbose)
+      execute_actions(build_actions, verbose=verbose, jobs=jobs)
    except Exception as exc:
       return False, f"Compile/link failed: {exc}", time.monotonic() - start, None
 

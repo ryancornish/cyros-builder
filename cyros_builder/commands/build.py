@@ -62,7 +62,7 @@ class BuildCommand(Command):
       print_action_plan(actions)
 
       try:
-         execute_actions(actions, verbose=args.verbose)
+         execute_actions(actions, verbose=args.verbose, jobs=args.jobs)
       except Exception as exc:
          print(f"Build failed: {exc}")
          return 1

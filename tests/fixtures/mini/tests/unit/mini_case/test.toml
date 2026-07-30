@@ -1,0 +1,14 @@
+[test]
+name   = "mini_case"
+source = "mini_case.cpp"
+config = "../../../build/configs/mini.hpp"
+
+[components]
+# port here is a FILTER: the test is skipped unless the profile selects one of
+# these. It never selects the port itself.
+port = ["porta"]
+time_driver = "tick"
+features = ["alpha"]
+
+[link]
+system_libraries = ["pthread"]

@@ -1,0 +1,15 @@
+name = "kernel"
+description = "Mini kernel, always built."
+public_headers = [
+   "include/mini/kernel.hpp -> mini/kernel.hpp",
+]
+sources = [
+   "kernel.cpp",
+]
+# Compiled but deliberately kept out of the archive.
+sources_excluded_from_archive = [
+   "validate.cpp",
+]
+private_includes = [
+   "private",
+]

@@ -1,0 +1,6 @@
+name = "beta"
+description = "Feature that depends on another feature."
+dependencies = ["alpha"]
+sources = [
+   "beta.cpp",
+]

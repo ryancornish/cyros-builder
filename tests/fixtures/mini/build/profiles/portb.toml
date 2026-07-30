@@ -1,0 +1,19 @@
+# The second port variant, no features.
+[profile]
+name = "portb"
+toolchain = "../toolchains/base.toml"
+config_header = "../configs/mini.hpp"
+
+[layout]
+source_root = "../../src"
+output_root = "../../out"
+
+[components]
+port = "portb"
+time_driver = "tick"
+
+[features]
+enable = []
+
+[output]
+archive = "libmini.a"

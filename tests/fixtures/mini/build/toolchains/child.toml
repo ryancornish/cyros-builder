@@ -1,0 +1,12 @@
+# Exercises extends + the [flags] <key>_add / <key>_remove merge rule.
+name = "mini-child"
+extends = "base.toml"
+
+[flags]
+common_add    = ["-DCHILD"]
+common_remove = ["-DDROP_ME"]
+cxx_add       = ["-fno-exceptions"]
+
+[settings]
+debug = true
+optimization = "O0"

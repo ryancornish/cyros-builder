@@ -1,0 +1,6 @@
+name = "timed"
+description = "Feature that requires a time driver."
+dependencies = ["time"]
+sources = [
+   "timed.cpp",
+]

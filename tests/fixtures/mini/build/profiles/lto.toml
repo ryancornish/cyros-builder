@@ -1,0 +1,19 @@
+# lto_merged archive strategy with symbol filtering.
+[profile]
+name = "lto"
+toolchain = "../toolchains/lto.toml"
+config_header = "../configs/mini.hpp"
+
+[layout]
+source_root = "../../src"
+output_root = "../../out"
+
+[components]
+port = "porta"
+time_driver = "tick"
+
+[features]
+enable = ["alpha"]
+
+[output]
+archive = "libmini.a"

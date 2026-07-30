@@ -1,0 +1,19 @@
+# Everything on: port A, a time driver, three features, simple archive.
+[profile]
+name = "full"
+toolchain = "../toolchains/child.toml"
+config_header = "../configs/mini.hpp"
+
+[layout]
+source_root = "../../src"
+output_root = "../../out"
+
+[components]
+port = "porta"
+time_driver = "tick"
+
+[features]
+enable = ["alpha", "beta", "timed"]
+
+[output]
+archive = "libmini.a"

@@ -1,0 +1,230 @@
+[
+  {
+    "action": "CompileAction",
+    "arguments": [
+      "g++",
+      "-DBASE",
+      "-DCHILD",
+      "-std=c++20",
+      "-fno-exceptions",
+      "-I",
+      "<OUT>/full/mini-child/include",
+      "-c",
+      "<FIXTURE>/src/userlib/alpha/alpha.cpp",
+      "-o",
+      "<OUT>/full/mini-child/obj/userlib/alpha/alpha.o"
+    ],
+    "component": "alpha",
+    "kind": "translation_unit",
+    "language": "c++",
+    "output": "<OUT>/full/mini-child/obj/userlib/alpha/alpha.o",
+    "source": "<FIXTURE>/src/userlib/alpha/alpha.cpp",
+    "working_directory": "<OUT>/full/mini-child/obj"
+  },
+  {
+    "action": "CompileAction",
+    "arguments": [
+      "g++",
+      "-DBASE",
+      "-DCHILD",
+      "-std=c++20",
+      "-fno-exceptions",
+      "-I",
+      "<OUT>/full/mini-child/include",
+      "-c",
+      "<FIXTURE>/src/userlib/beta/beta.cpp",
+      "-o",
+      "<OUT>/full/mini-child/obj/userlib/beta/beta.o"
+    ],
+    "component": "beta",
+    "kind": "translation_unit",
+    "language": "c++",
+    "output": "<OUT>/full/mini-child/obj/userlib/beta/beta.o",
+    "source": "<FIXTURE>/src/userlib/beta/beta.cpp",
+    "working_directory": "<OUT>/full/mini-child/obj"
+  },
+  {
+    "action": "CompileAction",
+    "arguments": [
+      "g++",
+      "-DBASE",
+      "-DCHILD",
+      "-std=c++20",
+      "-fno-exceptions",
+      "-I",
+      "<OUT>/full/mini-child/include",
+      "-I",
+      "<FIXTURE>/src/kernel/private",
+      "-c",
+      "<FIXTURE>/src/kernel/kernel.cpp",
+      "-o",
+      "<OUT>/full/mini-child/obj/kernel/kernel.o"
+    ],
+    "component": "kernel",
+    "kind": "translation_unit",
+    "language": "c++",
+    "output": "<OUT>/full/mini-child/obj/kernel/kernel.o",
+    "source": "<FIXTURE>/src/kernel/kernel.cpp",
+    "working_directory": "<OUT>/full/mini-child/obj"
+  },
+  {
+    "action": "CompileAction",
+    "arguments": [
+      "g++",
+      "-DBASE",
+      "-DCHILD",
+      "-std=c++20",
+      "-fno-exceptions",
+      "-I",
+      "<OUT>/full/mini-child/include",
+      "-I",
+      "<FIXTURE>/src/kernel/private",
+      "-c",
+      "<FIXTURE>/src/kernel/validate.cpp",
+      "-o",
+      "<OUT>/full/mini-child/obj/kernel/validate.o"
+    ],
+    "component": "kernel",
+    "kind": "translation_unit",
+    "language": "c++",
+    "output": "<OUT>/full/mini-child/obj/kernel/validate.o",
+    "source": "<FIXTURE>/src/kernel/validate.cpp",
+    "working_directory": "<OUT>/full/mini-child/obj"
+  },
+  {
+    "action": "CompileAction",
+    "arguments": [
+      "gcc",
+      "-DBASE",
+      "-DCHILD",
+      "-std=c17",
+      "-I",
+      "<OUT>/full/mini-child/include",
+      "-c",
+      "<FIXTURE>/external/vendor/vendor.c",
+      "-o",
+      "<OUT>/full/mini-child/obj/_external/porta/vendor.o"
+    ],
+    "component": "porta",
+    "kind": "translation_unit",
+    "language": "c",
+    "output": "<OUT>/full/mini-child/obj/_external/porta/vendor.o",
+    "source": "<FIXTURE>/external/vendor/vendor.c",
+    "working_directory": "<OUT>/full/mini-child/obj"
+  },
+  {
+    "action": "CompileAction",
+    "arguments": [
+      "as",
+      "-DBASE",
+      "-DCHILD",
+      "-DASM",
+      "-I",
+      "<OUT>/full/mini-child/include",
+      "-c",
+      "<FIXTURE>/src/port/porta/asm_bits.S",
+      "-o",
+      "<OUT>/full/mini-child/obj/port/porta/asm_bits.o"
+    ],
+    "component": "porta",
+    "kind": "translation_unit",
+    "language": "asm",
+    "output": "<OUT>/full/mini-child/obj/port/porta/asm_bits.o",
+    "source": "<FIXTURE>/src/port/porta/asm_bits.S",
+    "working_directory": "<OUT>/full/mini-child/obj"
+  },
+  {
+    "action": "CompileAction",
+    "arguments": [
+      "g++",
+      "-DBASE",
+      "-DCHILD",
+      "-std=c++20",
+      "-fno-exceptions",
+      "-I",
+      "<OUT>/full/mini-child/include",
+      "-c",
+      "<FIXTURE>/src/port/porta/porta.cpp",
+      "-o",
+      "<OUT>/full/mini-child/obj/port/porta/porta.o"
+    ],
+    "component": "porta",
+    "kind": "translation_unit",
+    "language": "c++",
+    "output": "<OUT>/full/mini-child/obj/port/porta/porta.o",
+    "source": "<FIXTURE>/src/port/porta/porta.cpp",
+    "working_directory": "<OUT>/full/mini-child/obj"
+  },
+  {
+    "action": "CompileAction",
+    "arguments": [
+      "g++",
+      "-DBASE",
+      "-DCHILD",
+      "-std=c++20",
+      "-fno-exceptions",
+      "-I",
+      "<OUT>/full/mini-child/include",
+      "-c",
+      "<FIXTURE>/src/time/tick/tick.cpp",
+      "-o",
+      "<OUT>/full/mini-child/obj/time/tick/tick.o"
+    ],
+    "component": "tick",
+    "kind": "translation_unit",
+    "language": "c++",
+    "output": "<OUT>/full/mini-child/obj/time/tick/tick.o",
+    "source": "<FIXTURE>/src/time/tick/tick.cpp",
+    "working_directory": "<OUT>/full/mini-child/obj"
+  },
+  {
+    "action": "CompileAction",
+    "arguments": [
+      "g++",
+      "-DBASE",
+      "-DCHILD",
+      "-std=c++20",
+      "-fno-exceptions",
+      "-I",
+      "<OUT>/full/mini-child/include",
+      "-c",
+      "<FIXTURE>/src/userlib/timed/timed.cpp",
+      "-o",
+      "<OUT>/full/mini-child/obj/userlib/timed/timed.o"
+    ],
+    "component": "timed",
+    "kind": "translation_unit",
+    "language": "c++",
+    "output": "<OUT>/full/mini-child/obj/userlib/timed/timed.o",
+    "source": "<FIXTURE>/src/userlib/timed/timed.cpp",
+    "working_directory": "<OUT>/full/mini-child/obj"
+  },
+  {
+    "action": "ArchiveAction",
+    "arguments": [
+      "ar",
+      "rcs",
+      "<OUT>/full/mini-child/lib/libmini.a",
+      "<OUT>/full/mini-child/obj/userlib/alpha/alpha.o",
+      "<OUT>/full/mini-child/obj/userlib/beta/beta.o",
+      "<OUT>/full/mini-child/obj/kernel/kernel.o",
+      "<OUT>/full/mini-child/obj/_external/porta/vendor.o",
+      "<OUT>/full/mini-child/obj/port/porta/asm_bits.o",
+      "<OUT>/full/mini-child/obj/port/porta/porta.o",
+      "<OUT>/full/mini-child/obj/time/tick/tick.o",
+      "<OUT>/full/mini-child/obj/userlib/timed/timed.o"
+    ],
+    "inputs": [
+      "<OUT>/full/mini-child/obj/userlib/alpha/alpha.o",
+      "<OUT>/full/mini-child/obj/userlib/beta/beta.o",
+      "<OUT>/full/mini-child/obj/kernel/kernel.o",
+      "<OUT>/full/mini-child/obj/_external/porta/vendor.o",
+      "<OUT>/full/mini-child/obj/port/porta/asm_bits.o",
+      "<OUT>/full/mini-child/obj/port/porta/porta.o",
+      "<OUT>/full/mini-child/obj/time/tick/tick.o",
+      "<OUT>/full/mini-child/obj/userlib/timed/timed.o"
+    ],
+    "output": "<OUT>/full/mini-child/lib/libmini.a",
+    "working_directory": "<CWD>"
+  }
+]

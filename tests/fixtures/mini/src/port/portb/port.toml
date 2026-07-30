@@ -1,0 +1,5 @@
+name = "portb"
+description = "Port B: the plain case."
+sources = [
+   "portb.cpp",
+]

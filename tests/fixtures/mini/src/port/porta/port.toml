@@ -1,0 +1,8 @@
+name = "porta"
+description = "Port A: asm TU plus an out-of-tree vendored C source."
+sources = [
+   "porta.cpp",
+   "asm_bits.S",
+   "../../../external/vendor/vendor.c",
+]
+system_libraries = ["pthread"]

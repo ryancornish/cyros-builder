@@ -207,3 +207,12 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# --- cyros-builder ------------------------------------------------------------
+# The synthetic test fixture mirrors a real cyros checkout, so it contains a
+# build/ directory (profiles, toolchains, configs). The stock `build/` rule far
+# above matches that at any depth and would silently drop 13 fixture files, so
+# the suite would fail on a fresh clone with no obvious cause. Re-include the
+# directory itself — negating only the files inside would not work, because git
+# does not descend into an excluded directory.
+!tests/fixtures/**/build/

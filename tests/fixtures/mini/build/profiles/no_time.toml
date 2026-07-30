@@ -1,0 +1,18 @@
+# No time driver at all: nothing under src/time is loaded or compiled.
+[profile]
+name = "no_time"
+toolchain = "../toolchains/child.toml"
+config_header = "../configs/mini.hpp"
+
+[layout]
+source_root = "../../src"
+output_root = "../../out"
+
+[components]
+port = "porta"
+
+[features]
+enable = ["alpha"]
+
+[output]
+archive = "libmini.a"

@@ -1,0 +1,5 @@
+name = "tick"
+description = "Tick driver."
+sources = [
+   "tick.cpp",
+]

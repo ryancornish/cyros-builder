@@ -1,0 +1,9 @@
+# Exercises the lto_merged archive strategy and symbol filtering.
+name = "mini-lto"
+extends = "base.toml"
+
+[archive]
+strategy = "lto_merged"
+exported_symbols_file = "exports.txt"
+filter_exported_symbols = true
+preserve_lto_sections = false

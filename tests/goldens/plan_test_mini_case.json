@@ -1,0 +1,48 @@
+[
+  {
+    "action": "CompileTestAction",
+    "arguments": [
+      "g++",
+      "-DBASE",
+      "-DCHILD",
+      "-std=c++20",
+      "-fno-exceptions",
+      "-I",
+      "<OUT>/full/mini-child/include",
+      "-c",
+      "<FIXTURE>/tests/unit/mini_case/mini_case.cpp",
+      "-o",
+      "<OUT>/full/mini-child/obj/mini_case.o"
+    ],
+    "output": "<OUT>/full/mini-child/obj/mini_case.o",
+    "source": "<FIXTURE>/tests/unit/mini_case/mini_case.cpp",
+    "test_name": "mini_case",
+    "working_directory": "<OUT>/full/mini-child"
+  },
+  {
+    "action": "LinkTestAction",
+    "arguments": [
+      "g++",
+      "-DBASE",
+      "-DCHILD",
+      "<OUT>/full/mini-child/obj/mini_case.o",
+      "<OUT>/full/mini-child/lib/libmini.a",
+      "-lpthread",
+      "-o",
+      "<OUT>/full/mini-child/bin/mini_case"
+    ],
+    "inputs": [
+      "<OUT>/full/mini-child/obj/mini_case.o",
+      "<OUT>/full/mini-child/lib/libmini.a"
+    ],
+    "output": "<OUT>/full/mini-child/bin/mini_case",
+    "test_name": "mini_case",
+    "working_directory": "<OUT>/full/mini-child/bin"
+  },
+  {
+    "action": "RunTestAction",
+    "binary": "<OUT>/full/mini-child/bin/mini_case",
+    "test_name": "mini_case",
+    "working_directory": "<FIXTURE>/tests/unit/mini_case"
+  }
+]

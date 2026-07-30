@@ -1,0 +1,108 @@
+[
+  {
+    "action": "CompileAction",
+    "arguments": [
+      "g++",
+      "-DBASE",
+      "-DDROP_ME",
+      "-std=c++20",
+      "-I",
+      "<OUT>/portb/mini-base/include",
+      "-I",
+      "<FIXTURE>/src/kernel/private",
+      "-c",
+      "<FIXTURE>/src/kernel/kernel.cpp",
+      "-o",
+      "<OUT>/portb/mini-base/obj/kernel/kernel.o"
+    ],
+    "component": "kernel",
+    "kind": "translation_unit",
+    "language": "c++",
+    "output": "<OUT>/portb/mini-base/obj/kernel/kernel.o",
+    "source": "<FIXTURE>/src/kernel/kernel.cpp",
+    "working_directory": "<OUT>/portb/mini-base/obj"
+  },
+  {
+    "action": "CompileAction",
+    "arguments": [
+      "g++",
+      "-DBASE",
+      "-DDROP_ME",
+      "-std=c++20",
+      "-I",
+      "<OUT>/portb/mini-base/include",
+      "-I",
+      "<FIXTURE>/src/kernel/private",
+      "-c",
+      "<FIXTURE>/src/kernel/validate.cpp",
+      "-o",
+      "<OUT>/portb/mini-base/obj/kernel/validate.o"
+    ],
+    "component": "kernel",
+    "kind": "translation_unit",
+    "language": "c++",
+    "output": "<OUT>/portb/mini-base/obj/kernel/validate.o",
+    "source": "<FIXTURE>/src/kernel/validate.cpp",
+    "working_directory": "<OUT>/portb/mini-base/obj"
+  },
+  {
+    "action": "CompileAction",
+    "arguments": [
+      "g++",
+      "-DBASE",
+      "-DDROP_ME",
+      "-std=c++20",
+      "-I",
+      "<OUT>/portb/mini-base/include",
+      "-c",
+      "<FIXTURE>/src/port/portb/portb.cpp",
+      "-o",
+      "<OUT>/portb/mini-base/obj/port/portb/portb.o"
+    ],
+    "component": "portb",
+    "kind": "translation_unit",
+    "language": "c++",
+    "output": "<OUT>/portb/mini-base/obj/port/portb/portb.o",
+    "source": "<FIXTURE>/src/port/portb/portb.cpp",
+    "working_directory": "<OUT>/portb/mini-base/obj"
+  },
+  {
+    "action": "CompileAction",
+    "arguments": [
+      "g++",
+      "-DBASE",
+      "-DDROP_ME",
+      "-std=c++20",
+      "-I",
+      "<OUT>/portb/mini-base/include",
+      "-c",
+      "<FIXTURE>/src/time/tick/tick.cpp",
+      "-o",
+      "<OUT>/portb/mini-base/obj/time/tick/tick.o"
+    ],
+    "component": "tick",
+    "kind": "translation_unit",
+    "language": "c++",
+    "output": "<OUT>/portb/mini-base/obj/time/tick/tick.o",
+    "source": "<FIXTURE>/src/time/tick/tick.cpp",
+    "working_directory": "<OUT>/portb/mini-base/obj"
+  },
+  {
+    "action": "ArchiveAction",
+    "arguments": [
+      "ar",
+      "rcs",
+      "<OUT>/portb/mini-base/lib/libmini.a",
+      "<OUT>/portb/mini-base/obj/kernel/kernel.o",
+      "<OUT>/portb/mini-base/obj/port/portb/portb.o",
+      "<OUT>/portb/mini-base/obj/time/tick/tick.o"
+    ],
+    "inputs": [
+      "<OUT>/portb/mini-base/obj/kernel/kernel.o",
+      "<OUT>/portb/mini-base/obj/port/portb/portb.o",
+      "<OUT>/portb/mini-base/obj/time/tick/tick.o"
+    ],
+    "output": "<OUT>/portb/mini-base/lib/libmini.a",
+    "working_directory": "<CWD>"
+  }
+]

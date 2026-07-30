@@ -34,7 +34,7 @@ from cyros_builder.include_tree import populate_include_tree
 from cyros_builder.planner import plan_build
 from cyros_builder.resolve import ResolvedInvocation
 from cyros_builder.test_model import TestCase
-from cyros_builder.test_planner import plan_test, test_output_root
+from cyros_builder.test_planner import make_test_resolved, plan_test
 
 
 @dataclass
@@ -181,7 +181,7 @@ def _build_one(
    Returns (success, error_message, duration_s, run_action | None).
    """
    start = time.monotonic()
-   test_resolved = _make_test_resolved(resolved, test)
+   test_resolved = make_test_resolved(resolved, test)
 
    # Wipe this test's output tree before building. The per-test output root is
    # keyed only on test name + toolchain, NOT on the resolved component
@@ -237,63 +237,6 @@ def _run_one(
       return False, f"exited with code {result.returncode}", duration
    except Exception as exc:
       return False, f"failed to launch: {exc}", time.monotonic() - start
-
-
-def _make_test_resolved(base: ResolvedInvocation, test: TestCase) -> ResolvedInvocation:
-   """
-   Build a per-test ResolvedInvocation (Design A).
-
-   Always overridden per-test: config header, output root.
-
-   Port: inherited from the profile unchanged. The test never selects its own
-   port; it only filters (see _skip_reason). So we leave components.port alone.
-
-   Time driver: the test's locked driver if it declares one, else the profile's
-   default, else "simulation" as the agnostic fallback.
-
-   Features: the test's declared features REPLACE the profile's feature set
-   (unit tests own their feature configuration entirely).
-
-   The profile is rebuilt with the updated ComponentsConfig / FeaturesConfig so
-   select_project() picks everything up.
-   """
-   import dataclasses
-
-   profile = base.profile
-
-   # --- time driver ---
-   # Precedence: the test's locked driver, then the profile default. If neither
-   # is set, the test gets no time driver UNLESS it enables features (which may
-   # depend on "time"), in which case we fall back to "simulation" so the
-   # dependency resolves. Purely-kernel tests thus build with no driver at all,
-   # keeping their archive minimal.
-   if test.time_driver is not None:
-      time_driver: str | None = test.time_driver
-   elif profile.components.time_driver is not None:
-      time_driver = profile.components.time_driver
-   elif test.features:
-      time_driver = "simulation"
-   else:
-      time_driver = None
-
-   new_components = dataclasses.replace(profile.components, time_driver=time_driver)
-   profile = dataclasses.replace(profile, components=new_components)
-
-   # --- features: test declaration replaces the profile's set ---
-   new_features = dataclasses.replace(profile.features, enable=test.features)
-   profile = dataclasses.replace(profile, features=new_features)
-
-   return ResolvedInvocation(
-      profile_root=base.profile_root,
-      profile=profile,
-      toolchain=base.toolchain,
-      selected_toolchain_name=base.selected_toolchain_name,
-      cli_overrode_toolchain=base.cli_overrode_toolchain,
-      config_header=test.config,
-      cli_overrode_config=True,
-      output_root=test_output_root(base, test),
-      cli_overrode_output=True,
-   )
 
 
 # ---------------------------------------------------------------------------

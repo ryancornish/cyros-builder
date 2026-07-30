@@ -13,13 +13,13 @@ class ResolvedInvocation:
    toolchain: Toolchain
    selected_toolchain_name: str
    cli_overrode_toolchain: bool
-   config_header: Path
+   config_header: Path | None   # None only when resolved with require_config=False
    cli_overrode_config: bool
    output_root: Path
    cli_overrode_output: bool
 
 
-def resolve_invocation(args: Namespace) -> ResolvedInvocation:
+def resolve_invocation(args: Namespace, *, require_config: bool = True) -> ResolvedInvocation:
    profile = load_profile(Path(args.profile))
 
    # --- toolchain ---
@@ -37,17 +37,22 @@ def resolve_invocation(args: Namespace) -> ResolvedInvocation:
 
    # --- config header ---
    cli_overrode_config = getattr(args, "config", None) is not None
+   config_header: Path | None
    if cli_overrode_config:
       config_header = Path(args.config).resolve()
       if not config_header.is_file():
          raise ValueError(f"Config header not found: {config_header}")
    elif profile.config_header is not None:
       config_header = profile.config_header
-   else:
+   elif require_config:
       raise ValueError(
          "No configuration header specified. "
          "Provide -c/--config <path> or set config_header in the profile."
       )
+   else:
+      # Callers with require_config=False (unit tests) supply their own
+      # config header per test and override this before it is ever read.
+      config_header = None
 
    # --- output root ---
    cli_overrode_output = getattr(args, "output", None) is not None

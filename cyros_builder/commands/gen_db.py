@@ -9,6 +9,7 @@ from cyros_builder.commands.base import (
    add_output_arg,
    add_profile_arg,
    add_toolchain_arg,
+   step,
 )
 from cyros_builder.compdb import CompileCommand, activate_compile_commands, write_compile_commands
 from cyros_builder.include_tree import populate_include_tree
@@ -43,36 +44,24 @@ class GenDbCommand(Command):
       )
 
    def run(self, args: Namespace) -> int:
-      try:
+      with step("Failed to resolve invocation"):
          resolved = resolve_invocation(args)
-      except Exception as exc:
-         print(f"Failed to resolve invocation: {exc}")
-         return 1
 
-      try:
+      with step("Failed to populate include tree"):
          populate_include_tree(resolved)
-      except Exception as exc:
-         print(f"Failed to populate include tree: {exc}")
-         return 1
 
       db_path = args.db_path.resolve() if args.db_path else compile_db_path(resolved)
 
-      try:
+      with step("Failed to generate compile database"):
          commands = self._generate_compile_commands(resolved)
          write_compile_commands(db_path, commands)
-      except Exception as exc:
-         print(f"Failed to generate compile database: {exc}")
-         return 1
 
       print(f"Wrote compile database: {db_path}")
 
       if args.activate:
-         try:
+         with step("Failed to activate compile database"):
             activate_compile_commands(resolved.profile.layout.source_root, db_path)
-            print(f"Activated: {resolved.profile.layout.source_root.parent / 'compile_commands.json'}")
-         except Exception as exc:
-            print(f"Failed to activate compile database: {exc}")
-            return 1
+         print(f"Activated: {resolved.profile.layout.source_root.parent / 'compile_commands.json'}")
 
       return 0
 

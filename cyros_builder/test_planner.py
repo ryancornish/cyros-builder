@@ -14,9 +14,11 @@ get steps 2-4.
 
 from __future__ import annotations
 
+import dataclasses
 from pathlib import Path
 
 from cyros_builder.actions import CompileTestAction, LinkTestAction, RunTestAction
+from cyros_builder.compile_args import build_compile_args
 from cyros_builder.output import build_root, include_dir, lib_dir
 from cyros_builder.resolve import ResolvedInvocation
 from cyros_builder.test_model import TestCase
@@ -44,6 +46,67 @@ def test_build_root(resolved: ResolvedInvocation, test: TestCase) -> Path:
    as the archive it links against — they must never diverge.
    """
    return build_root(resolved)
+
+
+def make_test_resolved(base: ResolvedInvocation, test: TestCase) -> ResolvedInvocation:
+   """
+   Build a per-test ResolvedInvocation (Design A).
+
+   Always overridden per-test: config header, output root.
+
+   Port: inherited from the profile unchanged. The test never selects its own
+   port; it only filters (see test_runner._skip_reason). So we leave
+   components.port alone.
+
+   Time driver: the test's locked driver if it declares one, else the
+   profile's default, else "simulation" as the agnostic fallback.
+
+   Features: the test's declared features REPLACE the profile's feature set
+   (unit tests own their feature configuration entirely).
+
+   The profile is rebuilt with the updated ComponentsConfig / FeaturesConfig
+   so select_project() picks everything up.
+
+   test_runner uses the result to actually build and link the test; coverage
+   uses it only to recompute test_build_root()/test_output_root() for an
+   already-built test. Both must derive it the same way, so this is the one
+   place it happens.
+   """
+   profile = base.profile
+
+   # --- time driver ---
+   # Precedence: the test's locked driver, then the profile default. If neither
+   # is set, the test gets no time driver UNLESS it enables features (which may
+   # depend on "time"), in which case we fall back to "simulation" so the
+   # dependency resolves. Purely-kernel tests thus build with no driver at all,
+   # keeping their archive minimal.
+   if test.time_driver is not None:
+      time_driver: str | None = test.time_driver
+   elif profile.components.time_driver is not None:
+      time_driver = profile.components.time_driver
+   elif test.features:
+      time_driver = "simulation"
+   else:
+      time_driver = None
+
+   new_components = dataclasses.replace(profile.components, time_driver=time_driver)
+   profile = dataclasses.replace(profile, components=new_components)
+
+   # --- features: test declaration replaces the profile's set ---
+   new_features = dataclasses.replace(profile.features, enable=test.features)
+   profile = dataclasses.replace(profile, features=new_features)
+
+   return ResolvedInvocation(
+      profile_root=base.profile_root,
+      profile=profile,
+      toolchain=base.toolchain,
+      selected_toolchain_name=base.selected_toolchain_name,
+      cli_overrode_toolchain=base.cli_overrode_toolchain,
+      config_header=test.config,
+      cli_overrode_config=True,
+      output_root=test_output_root(base, test),
+      cli_overrode_output=True,
+   )
 
 
 def plan_test(
@@ -77,17 +140,16 @@ def plan_test(
    compile_actions: list[CompileTestAction] = []
    obj_paths: list[Path] = []
 
+   generated_include_root = include_dir(resolved).resolve()
+
    for source in test.sources:
       obj_path = (test_obj_dir / source.name).with_suffix(".o")
       obj_paths.append(obj_path)
 
-      compile_args: tuple[str, ...] = (
-         tc.tools.cxx,
-         *tc.flags.common,
-         *tc.flags.cxx,
-         "-I", str(include_dir(resolved).resolve()),
-         "-c", str(source.resolve()),
-         "-o", str(obj_path.resolve()),
+      compile_args = build_compile_args(
+         tc.tools.cxx, tc.flags.common, tc.flags.cxx,
+         (generated_include_root,),
+         source.resolve(), obj_path.resolve(),
       )
 
       compile_actions.append(

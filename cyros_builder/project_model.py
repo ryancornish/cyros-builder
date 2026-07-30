@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from pathlib import Path
-import tomllib
 
+from cyros_builder import tomlutil
 from cyros_builder.profile import Profile
 
 
@@ -67,223 +67,115 @@ class SelectedProject:
    features: dict[str, Feature]
 
 
-def load_kernel(profile) -> Kernel:
-   path = (profile.layout.source_root / "kernel" / "component.toml").resolve()
-   raw = _load_toml(path)
-   return Kernel(
+def _load_source_group(
+   path: Path,
+   cls: type,
+   *,
+   source_roots_default: list[str] | None = None,
+   extra_str_list_fields: tuple[str, ...] = (),
+):
+   raw = tomlutil.load_toml(path, must_exist=True)
+   kwargs = dict(
       path=path,
-      name=_require_str(raw, "name", path),
-      description=_optional_str(raw, "description", path, default=""),
-      dependencies=tuple(_optional_str_list(raw, "dependencies", path)),
+      name=tomlutil.require_str(raw, "name", path),
+      description=tomlutil.optional_str_default(raw, "description", path, default=""),
+      dependencies=tuple(tomlutil.optional_str_list(raw, "dependencies", path)),
       public_headers=_parse_public_headers(raw, path),
-      public_modules=tuple(_optional_str_list(raw, "public_modules", path)),
-      private_modules=tuple(_optional_str_list(raw, "private_modules", path)),
+      public_modules=tuple(tomlutil.optional_str_list(raw, "public_modules", path)),
+      private_modules=tuple(tomlutil.optional_str_list(raw, "private_modules", path)),
       source_roots=_resolve_source_roots(
          meta_path=path,
-         values=_optional_str_list(raw, "source_roots", path, default=["."]),
+         values=tomlutil.optional_str_list(raw, "source_roots", path, default=source_roots_default),
       ),
       sources=_resolve_sources(
          meta_path=path,
-         values=_optional_str_list(raw, "sources", path),
+         values=tomlutil.optional_str_list(raw, "sources", path),
       ),
       sources_excluded_from_archive=_resolve_sources(
          meta_path=path,
-         values=_optional_str_list(raw, "sources_excluded_from_archive", path),
+         values=tomlutil.optional_str_list(raw, "sources_excluded_from_archive", path),
       ),
-      generated_includes=_optional_bool(raw, "generated_includes", path, default=True),
+      generated_includes=tomlutil.optional_bool(raw, "generated_includes", path, default=True),
       private_includes=_resolve_dirs(
          meta_path=path,
-         values=_optional_str_list(raw, "private_includes", path),
+         values=tomlutil.optional_str_list(raw, "private_includes", path),
       ),
    )
+   for field in extra_str_list_fields:
+      kwargs[field] = tuple(tomlutil.optional_str_list(raw, field, path))
+   return cls(**kwargs)
+
+
+def _load_source_group_dir(
+   base: Path,
+   glob: str,
+   cls: type,
+   *,
+   noun: str,
+   source_roots_default: list[str] | None = None,
+   extra_str_list_fields: tuple[str, ...] = (),
+) -> dict[str, SourceGroup]:
+   result: dict[str, SourceGroup] = {}
+   if not base.is_dir():
+      return result
+
+   for meta in sorted(base.glob(glob)):
+      item = _load_source_group(
+         meta.resolve(),
+         cls,
+         source_roots_default=source_roots_default,
+         extra_str_list_fields=extra_str_list_fields,
+      )
+      if item.name in result:
+         raise ValueError(f"Duplicate {noun} '{item.name}'")
+      result[item.name] = item
+
+   return result
+
+
+def load_kernel(profile) -> Kernel:
+   path = (profile.layout.source_root / "kernel" / "component.toml").resolve()
+   return _load_source_group(path, Kernel, source_roots_default=["."])
 
 
 def load_port_component(profile) -> PortComponent:
    path = (profile.layout.source_root / "port" / "component.toml").resolve()
-   raw = _load_toml(path)
-   return PortComponent(
-      path=path,
-      name=_require_str(raw, "name", path),
-      description=_optional_str(raw, "description", path, default=""),
-      dependencies=tuple(_optional_str_list(raw, "dependencies", path)),
-      public_headers=_parse_public_headers(raw, path),
-      public_modules=tuple(_optional_str_list(raw, "public_modules", path)),
-      private_modules=tuple(_optional_str_list(raw, "private_modules", path)),
-      source_roots=_resolve_source_roots(
-         meta_path=path,
-         values=_optional_str_list(raw, "source_roots", path, default=[]),
-      ),
-      sources=_resolve_sources(
-         meta_path=path,
-         values=_optional_str_list(raw, "sources", path),
-      ),
-      sources_excluded_from_archive=_resolve_sources(
-         meta_path=path,
-         values=_optional_str_list(raw, "sources_excluded_from_archive", path),
-      ),
-      generated_includes=_optional_bool(raw, "generated_includes", path, default=True),
-      private_includes=_resolve_dirs(
-         meta_path=path,
-         values=_optional_str_list(raw, "private_includes", path),
-      ),
-      variants=tuple(_optional_str_list(raw, "variants", path)),
+   return _load_source_group(
+      path, PortComponent, source_roots_default=[], extra_str_list_fields=("variants",)
    )
 
 
 def load_ports(profile) -> dict[str, Port]:
-   result: dict[str, Port] = {}
    base = (profile.layout.source_root / "port").resolve()
-   if not base.is_dir():
-      return result
-
-   for meta in sorted(base.glob("*/port.toml")):
-      raw = _load_toml(meta)
-      port = Port(
-         path=meta.resolve(),
-         name=_require_str(raw, "name", meta),
-         description=_optional_str(raw, "description", meta, default=""),
-         dependencies=tuple(_optional_str_list(raw, "dependencies", meta)),
-         public_headers=_parse_public_headers(raw, meta),
-         public_modules=tuple(_optional_str_list(raw, "public_modules", meta)),
-         private_modules=tuple(_optional_str_list(raw, "private_modules", meta)),
-         source_roots=_resolve_source_roots(
-            meta_path=meta,
-            values=_optional_str_list(raw, "source_roots", meta, default=["."]),
-         ),
-         sources=_resolve_sources(
-            meta_path=meta,
-            values=_optional_str_list(raw, "sources", meta),
-         ),
-         sources_excluded_from_archive=_resolve_sources(
-            meta_path=meta,
-            values=_optional_str_list(raw, "sources_excluded_from_archive", meta),
-         ),
-         generated_includes=_optional_bool(raw, "generated_includes", meta, default=True),
-         private_includes=_resolve_dirs(
-            meta_path=meta,
-            values=_optional_str_list(raw, "private_includes", meta),
-         ),
-         system_libraries=tuple(_optional_str_list(raw, "system_libraries", meta)),
-      )
-      if port.name in result:
-         raise ValueError(f"Duplicate port '{port.name}'")
-      result[port.name] = port
-
-   return result
+   return _load_source_group_dir(
+      base,
+      "*/port.toml",
+      Port,
+      noun="port",
+      source_roots_default=["."],
+      extra_str_list_fields=("system_libraries",),
+   )
 
 
 def load_time_component(profile) -> TimeComponent:
    path = (profile.layout.source_root / "time" / "component.toml").resolve()
-   raw = _load_toml(path)
-   return TimeComponent(
-      path=path,
-      name=_require_str(raw, "name", path),
-      description=_optional_str(raw, "description", path, default=""),
-      dependencies=tuple(_optional_str_list(raw, "dependencies", path)),
-      public_headers=_parse_public_headers(raw, path),
-      public_modules=tuple(_optional_str_list(raw, "public_modules", path)),
-      private_modules=tuple(_optional_str_list(raw, "private_modules", path)),
-      source_roots=_resolve_source_roots(
-         meta_path=path,
-         values=_optional_str_list(raw, "source_roots", path, default=[]),
-      ),
-      sources=_resolve_sources(
-         meta_path=path,
-         values=_optional_str_list(raw, "sources", path),
-      ),
-      sources_excluded_from_archive=_resolve_sources(
-         meta_path=path,
-         values=_optional_str_list(raw, "sources_excluded_from_archive", path),
-      ),
-      generated_includes=_optional_bool(raw, "generated_includes", path, default=True),
-      private_includes=_resolve_dirs(
-         meta_path=path,
-         values=_optional_str_list(raw, "private_includes", path),
-      ),
-      variants=tuple(_optional_str_list(raw, "variants", path)),
+   return _load_source_group(
+      path, TimeComponent, source_roots_default=[], extra_str_list_fields=("variants",)
    )
 
 
 def load_time_drivers(profile) -> dict[str, TimeDriver]:
-   result: dict[str, TimeDriver] = {}
    base = (profile.layout.source_root / "time").resolve()
-   if not base.is_dir():
-      return result
-
-   for meta in sorted(base.glob("*/time_driver.toml")):
-      raw = _load_toml(meta)
-      td = TimeDriver(
-         path=meta.resolve(),
-         name=_require_str(raw, "name", meta),
-         description=_optional_str(raw, "description", meta, default=""),
-         dependencies=tuple(_optional_str_list(raw, "dependencies", meta)),
-         public_headers=_parse_public_headers(raw, meta),
-         public_modules=tuple(_optional_str_list(raw, "public_modules", meta)),
-         private_modules=tuple(_optional_str_list(raw, "private_modules", meta)),
-         source_roots=_resolve_source_roots(
-            meta_path=meta,
-            values=_optional_str_list(raw, "source_roots", meta, default=["."]),
-         ),
-         sources=_resolve_sources(
-            meta_path=meta,
-            values=_optional_str_list(raw, "sources", meta),
-         ),
-         sources_excluded_from_archive=_resolve_sources(
-            meta_path=meta,
-            values=_optional_str_list(raw, "sources_excluded_from_archive", meta),
-         ),
-         generated_includes=_optional_bool(raw, "generated_includes", meta, default=True),
-         private_includes=_resolve_dirs(
-            meta_path=meta,
-            values=_optional_str_list(raw, "private_includes", meta),
-         ),
-      )
-      if td.name in result:
-         raise ValueError(f"Duplicate time driver '{td.name}'")
-      result[td.name] = td
-
-   return result
+   return _load_source_group_dir(
+      base, "*/time_driver.toml", TimeDriver, noun="time driver", source_roots_default=["."]
+   )
 
 
 def load_features(profile) -> dict[str, Feature]:
-   result: dict[str, Feature] = {}
    base = (profile.layout.source_root / "userlib").resolve()
-   if not base.is_dir():
-      return result
-
-   for meta in sorted(base.glob("*/feature.toml")):
-      raw = _load_toml(meta)
-      feat = Feature(
-         path=meta.resolve(),
-         name=_require_str(raw, "name", meta),
-         description=_optional_str(raw, "description", meta, default=""),
-         dependencies=tuple(_optional_str_list(raw, "dependencies", meta)),
-         public_headers=_parse_public_headers(raw, meta),
-         public_modules=tuple(_optional_str_list(raw, "public_modules", meta)),
-         private_modules=tuple(_optional_str_list(raw, "private_modules", meta)),
-         source_roots=_resolve_source_roots(
-            meta_path=meta,
-            values=_optional_str_list(raw, "source_roots", meta, default=["."]),
-         ),
-         sources=_resolve_sources(
-            meta_path=meta,
-            values=_optional_str_list(raw, "sources", meta),
-         ),
-         sources_excluded_from_archive=_resolve_sources(
-            meta_path=meta,
-            values=_optional_str_list(raw, "sources_excluded_from_archive", meta),
-         ),
-         generated_includes=_optional_bool(raw, "generated_includes", meta, default=True),
-         private_includes=_resolve_dirs(
-            meta_path=meta,
-            values=_optional_str_list(raw, "private_includes", meta),
-         ),
-      )
-      if feat.name in result:
-         raise ValueError(f"Duplicate feature '{feat.name}'")
-      result[feat.name] = feat
-
-   return result
+   return _load_source_group_dir(
+      base, "*/feature.toml", Feature, noun="feature", source_roots_default=["."]
+   )
 
 
 def select_project(profile: Profile) -> SelectedProject:
@@ -442,16 +334,6 @@ def _validate_source_separation(group: SourceGroup) -> None:
       )
 
 
-def _load_toml(path: Path) -> dict:
-   if not path.is_file():
-      raise FileNotFoundError(path)
-   with path.open("rb") as f:
-      raw = tomllib.load(f)
-   if not isinstance(raw, dict):
-      raise ValueError(f"{path}: root TOML document must be a table")
-   return raw
-
-
 def _resolve_source_roots(meta_path: Path, values: list[str]) -> tuple[Path, ...]:
    base = meta_path.parent
    return tuple((base / value).resolve() for value in values)
@@ -473,7 +355,7 @@ def _resolve_dirs(meta_path: Path, values: list[str]) -> tuple[Path, ...]:
 
 
 def _parse_public_headers(data: dict, path: Path) -> tuple[HeaderExport, ...]:
-   values = _optional_str_list(data, "public_headers", path)
+   values = tomlutil.optional_str_list(data, "public_headers", path)
    exports: list[HeaderExport] = []
 
    for value in values:
@@ -498,35 +380,3 @@ def _parse_public_headers(data: dict, path: Path) -> tuple[HeaderExport, ...]:
    return tuple(exports)
 
 
-def _require_str(data: dict, key: str, path: Path) -> str:
-   value = data.get(key)
-   if not isinstance(value, str):
-      raise ValueError(f"{path}: expected '{key}' to be a string")
-   return value
-
-
-def _optional_str(data: dict, key: str, path: Path, default: str = "") -> str:
-   value = data.get(key)
-   if value is None:
-      return default
-   if not isinstance(value, str):
-      raise ValueError(f"{path}: expected '{key}' to be a string")
-   return value
-
-
-def _optional_bool(data: dict, key: str, path: Path, default: bool = False) -> bool:
-   value = data.get(key)
-   if value is None:
-      return default
-   if not isinstance(value, bool):
-      raise ValueError(f"{path}: expected '{key}' to be a bool")
-   return value
-
-
-def _optional_str_list(data: dict, key: str, path: Path, default: list[str] | None = None) -> list[str]:
-   value = data.get(key)
-   if value is None:
-      return [] if default is None else list(default)
-   if not isinstance(value, list) or not all(isinstance(x, str) for x in value):
-      raise ValueError(f"{path}: expected '{key}' to be a list of strings")
-   return list(value)

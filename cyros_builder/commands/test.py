@@ -6,7 +6,10 @@ from cyros_builder.commands.base import (
    add_profile_arg,
    add_toolchain_arg,
    add_verbose_arg,
+   step,
 )
+from cyros_builder.errors import BuilderError
+from cyros_builder.resolve import resolve_invocation
 from cyros_builder.test_model import discover_tests, find_unit_test_root
 from cyros_builder.test_runner import run_all_tests
 
@@ -50,11 +53,8 @@ class TestCommand(Command):
    def run(self, args: Namespace) -> int:
       # Resolve the base invocation. Config header is not required here
       # because each test supplies its own — we defer that check.
-      try:
-         resolved = _resolve_without_config(args)
-      except Exception as exc:
-         print(f"Failed to resolve invocation: {exc}")
-         return 1
+      with step("Failed to resolve invocation"):
+         resolved = resolve_invocation(args, require_config=False)
 
       source_root = resolved.profile.layout.source_root
 
@@ -62,11 +62,9 @@ class TestCommand(Command):
       try:
          tests = discover_tests(source_root)
       except FileNotFoundError as exc:
-         print(f"Test discovery failed: {exc}")
-         return 1
+         raise BuilderError(f"Test discovery failed: {exc}") from exc
       except Exception as exc:
-         print(f"Error loading test cases: {exc}")
-         return 1
+         raise BuilderError(f"Error loading test cases: {exc}") from exc
 
       if not tests:
          unit_root = find_unit_test_root(source_root)
@@ -102,55 +100,12 @@ class TestCommand(Command):
 
          print(f"\nCollecting coverage data ({len(covered_tests)} test(s), "
                f"{len(tests) - len(covered_tests)} skipped)...")
-         try:
+         with step("Coverage report failed"):
             from cyros_builder.coverage import generate_coverage_report
             generate_coverage_report(
                resolved=resolved,
                tests=covered_tests,
                verbose=args.verbose,
             )
-         except Exception as exc:
-            print(f"Coverage report failed: {exc}")
-            return 1
 
       return 0
-
-
-def _resolve_without_config(args: Namespace):
-   """
-   Resolve the invocation but skip the config_header requirement.
-   Each unit test brings its own config header, so we don't want the
-   resolver to fail because none was set on the profile or CLI.
-   """
-   from cyros_builder.profile import load_profile
-   from cyros_builder.toolchain import resolve_toolchain
-   from cyros_builder.resolve import ResolvedInvocation
-   from pathlib import Path
-
-   profile = load_profile(Path(args.profile))
-
-   cli_overrode_toolchain = getattr(args, "toolchain", None) is not None
-   if cli_overrode_toolchain:
-      toolchain_path = Path(args.toolchain).resolve()
-   elif profile.toolchain is not None:
-      toolchain_path = profile.toolchain
-   else:
-      raise ValueError(
-         "No toolchain specified. "
-         "Provide -t/--toolchain <path> or set toolchain in the profile."
-      )
-   toolchain = resolve_toolchain(toolchain_path)
-
-   output_root = profile.layout.output_root
-
-   return ResolvedInvocation(
-      profile_root=profile.path.parent,
-      profile=profile,
-      toolchain=toolchain,
-      selected_toolchain_name=toolchain.name,
-      cli_overrode_toolchain=cli_overrode_toolchain,
-      config_header=Path("/dev/null"),   # never used; overridden per-test
-      cli_overrode_config=False,
-      output_root=output_root,
-      cli_overrode_output=False,
-   )

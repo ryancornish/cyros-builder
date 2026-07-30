@@ -1,7 +1,8 @@
 from __future__ import annotations
-import tomllib
 from dataclasses import dataclass
 from pathlib import Path
+
+from cyros_builder import tomlutil
 
 
 # -----------------------------------------------------------------------------
@@ -83,10 +84,11 @@ def _load_and_merge(path: Path, stack: list[Path]) -> tuple[dict, Path | None]:
       cycle = " -> ".join(str(p) for p in [*stack, path])
       raise ValueError(f"Toolchain inheritance cycle detected: {cycle}")
 
-   raw = _load_toml(path)
+   raw = tomlutil.load_toml(path)
    _validate_top_level_keys(raw, path)
+   _validate_declared_tables(raw, path)
 
-   extends_str = _optional_str(raw, "extends", path)
+   extends_str = tomlutil.optional_str_or_none(raw, "extends", path)
    if extends_str is None:
       return _deep_copy_dict(raw), None
 
@@ -171,55 +173,46 @@ def _apply_flag_add_remove(flags: dict, path: Path) -> None:
 # -----------------------------------------------------------------------------
 
 def _build_toolchain(path: Path, data: dict, extends_path: Path | None) -> Toolchain:
+   # Each contributing file's [tools]/[flags]/[settings]/[archive] tables were
+   # already validated, against that file's own path, in _load_and_merge via
+   # _validate_declared_tables. The merged dict here carries only keys that
+   # passed validation somewhere in the extends chain, so there is nothing
+   # left to check against this (possibly unrelated) leaf path.
    tools    = data.get("tools", {})
    flags    = data.get("flags", {})
    settings = data.get("settings", {})
    archive  = data.get("archive", {})
 
-   if not isinstance(tools, dict):
-      raise ValueError(f"{path}: expected [tools] table")
-   if not isinstance(flags, dict):
-      raise ValueError(f"{path}: expected [flags] table")
-   if not isinstance(settings, dict):
-      raise ValueError(f"{path}: expected [settings] table")
-   if not isinstance(archive, dict):
-      raise ValueError(f"{path}: expected [archive] table")
-
-   _validate_tools_table(tools, path)
-   _validate_flags_table(flags, path)
-   _validate_settings_table(settings, path)
-   _validate_archive_table(archive, path)
-
-   strategy = _optional_str(archive, "strategy", path) or "simple"
+   strategy = tomlutil.optional_str_or_none(archive, "strategy", path) or "simple"
 
    return Toolchain(
       path=path,
-      name=_require_str(data, "name", path),
+      name=tomlutil.require_str(data, "name", path),
       extends=extends_path,
       tools=ToolPaths(
-         cc=_require_str(tools, "cc", path),
-         cxx=_require_str(tools, "cxx", path),
-         ar=_require_str(tools, "ar", path),
-         asm=_optional_str(tools, "asm", path),
+         cc=tomlutil.require_str(tools, "cc", path),
+         cxx=tomlutil.require_str(tools, "cxx", path),
+         ar=tomlutil.require_str(tools, "ar", path),
+         asm=tomlutil.optional_str_or_none(tools, "asm", path),
       ),
       flags=ToolchainFlags(
-         common=tuple(_require_str_list(flags, "common", path)),
-         c=tuple(_require_str_list(flags, "c", path)),
-         cxx=tuple(_require_str_list(flags, "cxx", path)),
-         asm=tuple(_require_str_list(flags, "asm", path)),
-         link=tuple(_require_str_list(flags, "link", path)),
+         common=tuple(tomlutil.require_str_list(flags, "common", path)),
+         c=tuple(tomlutil.require_str_list(flags, "c", path)),
+         cxx=tuple(tomlutil.require_str_list(flags, "cxx", path)),
+         asm=tuple(tomlutil.require_str_list(flags, "asm", path)),
+         link=tuple(tomlutil.require_str_list(flags, "link", path)),
       ),
       settings=ToolchainSettings(
-         family=_require_str(settings, "family", path),
-         debug=_require_bool(settings, "debug", path),
-         optimization=_require_str(settings, "optimization", path),
-         warnings_as_errors=_require_bool(settings, "warnings_as_errors", path),
+         family=tomlutil.require_str(settings, "family", path),
+         debug=tomlutil.require_bool(settings, "debug", path),
+         optimization=tomlutil.require_str(settings, "optimization", path),
+         warnings_as_errors=tomlutil.require_bool(settings, "warnings_as_errors", path),
       ),
       archive=ArchiveSettings(
          strategy=strategy,
-         exported_symbols_file=_optional_str(archive, "exported_symbols_file", path),
-         filter_exported_symbols=_optional_bool(archive, "filter_exported_symbols", path, default=False),
-         preserve_lto_sections=_optional_bool(archive, "preserve_lto_sections", path, default=False),
+         exported_symbols_file=tomlutil.optional_str_or_none(archive, "exported_symbols_file", path),
+         filter_exported_symbols=tomlutil.optional_bool(archive, "filter_exported_symbols", path, default=False),
+         preserve_lto_sections=tomlutil.optional_bool(archive, "preserve_lto_sections", path, default=False),
       ),
    )
 
@@ -249,6 +242,28 @@ def _validate_top_level_keys(data: dict, path: Path) -> None:
    unknown = set(data) - _ALLOWED_TOP_LEVEL_KEYS
    if unknown:
       raise ValueError(f"{path}: unknown top-level keys: {', '.join(sorted(unknown))}")
+
+
+def _validate_declared_tables(data: dict, path: Path) -> None:
+   """
+   Validate this file's own [tools]/[flags]/[settings]/[archive] tables against
+   this file's own path, before inheritance merges them into anything else.
+   Doing this per-file (rather than once on the merged result in
+   _build_toolchain) is what lets a bad key be blamed on the file that
+   actually declared it, even when that file is a parent in an extends chain.
+   """
+   for key, validator in (
+      ("tools", _validate_tools_table),
+      ("flags", _validate_flags_table),
+      ("settings", _validate_settings_table),
+      ("archive", _validate_archive_table),
+   ):
+      if key not in data:
+         continue
+      table = data[key]
+      if not isinstance(table, dict):
+         raise ValueError(f"{path}: expected [{key}] table")
+      validator(table, path)
 
 
 def _validate_tools_table(data: dict, path: Path) -> None:
@@ -284,55 +299,8 @@ def _validate_archive_table(data: dict, path: Path) -> None:
 
 
 # -----------------------------------------------------------------------------
-# TOML + type helpers
+# Type helpers local to flag merging
 # -----------------------------------------------------------------------------
-
-def _load_toml(path: Path) -> dict:
-   with path.open("rb") as f:
-      raw = tomllib.load(f)
-   if not isinstance(raw, dict):
-      raise ValueError(f"{path}: root TOML document must be a table")
-   return raw
-
-
-def _require_str(data: dict, key: str, path: Path) -> str:
-   value = data.get(key)
-   if not isinstance(value, str):
-      raise ValueError(f"{path}: expected '{key}' to be a string")
-   return value
-
-
-def _optional_str(data: dict, key: str, path: Path) -> str | None:
-   value = data.get(key)
-   if value is None:
-      return None
-   if not isinstance(value, str):
-      raise ValueError(f"{path}: expected '{key}' to be a string if present")
-   return value
-
-
-def _require_bool(data: dict, key: str, path: Path) -> bool:
-   value = data.get(key)
-   if not isinstance(value, bool):
-      raise ValueError(f"{path}: expected '{key}' to be a bool")
-   return value
-
-
-def _optional_bool(data: dict, key: str, path: Path, default: bool = False) -> bool:
-   value = data.get(key)
-   if value is None:
-      return default
-   if not isinstance(value, bool):
-      raise ValueError(f"{path}: expected '{key}' to be a bool")
-   return value
-
-
-def _require_str_list(data: dict, key: str, path: Path) -> list[str]:
-   value = data.get(key)
-   if not isinstance(value, list) or not all(isinstance(x, str) for x in value):
-      raise ValueError(f"{path}: expected '{key}' to be a list of strings")
-   return value
-
 
 def _ensure_str_list(value: object, key: str, path: Path) -> None:
    if not isinstance(value, list) or not all(isinstance(x, str) for x in value):

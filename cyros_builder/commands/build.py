@@ -1,5 +1,4 @@
 from argparse import ArgumentParser, Namespace
-import traceback
 
 from cyros_builder.commands.base import (
    Command,
@@ -9,6 +8,7 @@ from cyros_builder.commands.base import (
    add_profile_arg,
    add_toolchain_arg,
    add_verbose_arg,
+   step,
 )
 from cyros_builder.executor import execute_actions
 from cyros_builder.include_tree import populate_include_tree
@@ -39,41 +39,25 @@ class BuildCommand(Command):
       )
 
    def run(self, args: Namespace) -> int:
-      try:
+      with step("Failed to resolve invocation"):
          resolved = resolve_invocation(args)
-      except Exception as exc:
-         print(f"Failed to resolve invocation: {exc}")
-         return 1
 
-      try:
+      with step("Failed to populate include tree"):
          populate_include_tree(resolved)
-         print(f"Populated include tree: {include_dir(resolved)}")
-      except Exception as exc:
-         print(f"Failed to populate include tree: {exc}")
-         traceback.print_exc()
-         return 1
+      print(f"Populated include tree: {include_dir(resolved)}")
 
-      try:
+      with step("Failed to plan build"):
          actions = plan_build(resolved)
-      except Exception as exc:
-         print(f"Failed to plan build: {exc}")
-         return 1
 
       print_action_plan(actions)
 
-      try:
+      with step("Build failed"):
          execute_actions(actions, verbose=args.verbose, jobs=args.jobs)
-      except Exception as exc:
-         print(f"Build failed: {exc}")
-         return 1
 
-      try:
+      with step("Build succeeded, but failed to write manifest"):
          manifest = build_manifest(resolved)
          out = manifest_path(resolved)
          write_manifest(out, manifest)
-         print(f"Wrote manifest: {out}")
-      except Exception as exc:
-         print(f"Build succeeded, but failed to write manifest: {exc}")
-         return 1
+      print(f"Wrote manifest: {out}")
 
       return 0

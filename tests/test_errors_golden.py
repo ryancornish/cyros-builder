@@ -204,18 +204,15 @@ def test_diagnostics_match_golden(tmp_path):
    assert_golden("diagnostics", messages)
 
 
-def test_merged_table_diagnostics_misattribute_the_declaring_file(tmp_path):
-   """KNOWN DEFECT, pinned so it stays visible.
+def test_merged_table_diagnostics_name_the_declaring_file(tmp_path):
+   """Table validators (`tools`, `flags`, `settings`, `archive`) run per-file in
+   `_load_and_merge`, against that file's own path, before inheritance merges
+   it into anything else. A bad key planted in a parent is blamed on the
+   parent, not on the child that merely extends it.
 
-   `_validate_top_level_keys` runs inside `_load_and_merge`, once per file, so
-   it names the file that actually declared the bad key. The four table
-   validators (`tools`, `flags`, `settings`, `archive`) instead run in
-   `_build_toolchain` against the *merged* dict carrying the *leaf* path, so a
-   bad key inherited from a parent is reported against the child.
-
-   Here the bad key is planted in base.toml and blamed on child.toml. When this
-   is fixed, this test will fail — replace it with the correct expectation and
-   regenerate the diagnostics golden.
+   (Formerly a known defect: these validators used to run once in
+   `_build_toolchain` against the merged dict carrying the leaf path, so a key
+   inherited from a parent was misattributed to the child. Fixed 2026-07-30.)
    """
    root = _copy_fixture(tmp_path / "misattribution")
    _patch(root / "build/toolchains/base.toml",
@@ -225,8 +222,8 @@ def test_merged_table_diagnostics_misattribute_the_declaring_file(tmp_path):
 
    assert "unknown keys in [flags]: cxxx" in message
    assert message.endswith("unknown keys in [flags]: cxxx")
-   assert "child.toml" in message, "current behaviour: blamed on the leaf"
-   assert "base.toml" not in message, "the file that declared it is not named"
+   assert "base.toml" in message, "the file that declared it is named"
+   assert "child.toml" not in message, "not blamed on the leaf"
 
 
 def test_top_level_key_diagnostics_name_the_right_file(tmp_path):

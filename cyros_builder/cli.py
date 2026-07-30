@@ -7,12 +7,18 @@ from cyros_builder.commands import (
    ShowCommand,
    TestCommand,
 )
+from cyros_builder.errors import BuilderError
 
 
 def build_parser() -> argparse.ArgumentParser:
    parser = argparse.ArgumentParser(
       prog="cyros-builder",
       description="Build tool for Cyros.",
+   )
+   parser.add_argument(
+      "--debug",
+      action="store_true",
+      help="On failure, show the full traceback instead of a one-line message.",
    )
 
    subparsers = parser.add_subparsers(
@@ -45,7 +51,13 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> int:
    parser = build_parser()
    args = parser.parse_args()
-   return args._command_obj.run(args)
+   try:
+      return args._command_obj.run(args)
+   except BuilderError as exc:
+      if args.debug:
+         raise
+      print(exc)
+      return 1
 
 
 if __name__ == "__main__":

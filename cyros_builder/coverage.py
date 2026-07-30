@@ -26,7 +26,7 @@ from pathlib import Path
 
 from cyros_builder.resolve import ResolvedInvocation
 from cyros_builder.test_model import TestCase
-from cyros_builder.test_planner import test_build_root, test_output_root
+from cyros_builder.test_planner import make_test_resolved, test_build_root
 
 
 def generate_coverage_report(
@@ -47,19 +47,9 @@ def generate_coverage_report(
    # --- Step 1: capture per-test .info files ---
    info_files: list[Path] = []
    for test in tests:
-      # Build a minimal resolved invocation just to get the right build root.
-      from cyros_builder.resolve import ResolvedInvocation as RI
-      test_resolved = RI(
-         profile_root=resolved.profile_root,
-         profile=resolved.profile,
-         toolchain=resolved.toolchain,
-         selected_toolchain_name=resolved.selected_toolchain_name,
-         cli_overrode_toolchain=resolved.cli_overrode_toolchain,
-         config_header=test.config,
-         cli_overrode_config=True,
-         output_root=test_output_root(resolved, test),
-         cli_overrode_output=True,
-      )
+      # Same per-test invocation test_runner used to build this test, so the
+      # build root computed here can never diverge from where it actually is.
+      test_resolved = make_test_resolved(resolved, test)
       build_root = test_build_root(test_resolved, test)
       info_file  = coverage_root / f"{test.name}.info"
 

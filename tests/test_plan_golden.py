@@ -31,7 +31,7 @@ from cyros_builder.planner import plan_build
 from cyros_builder.project_model import collect_public_headers, select_project
 from cyros_builder.test_model import discover_tests
 from cyros_builder.test_planner import plan_test
-from cyros_builder.test_runner import _make_test_resolved
+from cyros_builder.test_planner import make_test_resolved
 
 ALL_PROFILES = ["full", "no_time", "portb", "lto"]
 
@@ -52,7 +52,7 @@ def test_plan_test_matches_golden():
    tests = discover_tests(resolved.profile.layout.source_root)
    assert [t.name for t in tests] == ["mini_case"]
 
-   test_resolved = _make_test_resolved(resolved, tests[0])
+   test_resolved = make_test_resolved(resolved, tests[0])
    actions = plan_test(resolved=test_resolved, test=tests[0])
    assert_golden("plan_test_mini_case", plan_to_jsonable(actions, test_resolved))
 
@@ -233,7 +233,7 @@ def test_header_export_mapping():
 def test_plan_test_shape():
    resolved = resolve_fixture("full")
    test = discover_tests(resolved.profile.layout.source_root)[0]
-   test_resolved = _make_test_resolved(resolved, test)
+   test_resolved = make_test_resolved(resolved, test)
    actions = plan_test(resolved=test_resolved, test=test)
 
    assert [type(a).__name__ for a in actions] == [
@@ -251,7 +251,7 @@ def test_test_toml_features_replace_profile_features():
    assert resolved.profile.features.enable == ("alpha", "beta", "timed")
 
    test = discover_tests(resolved.profile.layout.source_root)[0]
-   test_resolved = _make_test_resolved(resolved, test)
+   test_resolved = make_test_resolved(resolved, test)
    assert test_resolved.profile.features.enable == ("alpha",)
 
    components = {a.component for a in compiles(plan_build(test_resolved))}
@@ -265,7 +265,7 @@ def test_test_port_is_a_filter_not_a_selection():
    test = discover_tests(resolved.profile.layout.source_root)[0]
    assert test.port_filter == ("porta",)
 
-   test_resolved = _make_test_resolved(resolved, test)
+   test_resolved = make_test_resolved(resolved, test)
    assert test_resolved.profile.components.port == "portb", (
       "the test must not override the profile's port"
    )

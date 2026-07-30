@@ -24,9 +24,10 @@ Layout convention (hardcoded — unit tests are internal to cortos):
 
 from __future__ import annotations
 
-import tomllib
 from dataclasses import dataclass
 from pathlib import Path
+
+from cyros_builder import tomlutil
 
 
 @dataclass(frozen=True)
@@ -78,13 +79,9 @@ def load_test_case(path: Path) -> TestCase:
    toml_path = path.resolve()
    base = toml_path.parent
 
-   with toml_path.open("rb") as f:
-      raw = tomllib.load(f)
+   raw = tomlutil.load_toml(toml_path)
 
-   if not isinstance(raw, dict):
-      raise ValueError(f"{toml_path}: root TOML document must be a table")
-
-   test_raw = _expect_table(raw, "test", toml_path)
+   test_raw = tomlutil.expect_table(raw, "test", toml_path)
 
    link_raw = raw.get("link", {})
    if not isinstance(link_raw, dict):
@@ -94,27 +91,27 @@ def load_test_case(path: Path) -> TestCase:
    if not isinstance(components_raw, dict):
       raise ValueError(f"{toml_path}: expected [components] to be a table if present")
 
-   name = _require_str(test_raw, "name", toml_path)
+   name = tomlutil.require_str(test_raw, "name", toml_path)
 
-   source_values = _optional_str_or_str_list(test_raw, "source", toml_path)
+   source_values = tomlutil.optional_str_or_str_list(test_raw, "source", toml_path)
    if not source_values:
       raise ValueError(f"{toml_path}: 'test.source' must list at least one source file")
    sources = tuple(
-      _require_existing_file((base / value).resolve(), "test.source", toml_path)
+      tomlutil.require_existing_file((base / value).resolve(), "test.source", toml_path)
       for value in source_values
    )
 
-   config = _require_existing_file(
-      (base / _require_str(test_raw, "config", toml_path)).resolve(),
+   config = tomlutil.require_existing_file(
+      (base / tomlutil.require_str(test_raw, "config", toml_path)).resolve(),
       "test.config", toml_path,
    )
 
-   system_libraries = tuple(_optional_str_list(link_raw, "system_libraries", toml_path))
-   extra_link_flags = tuple(_optional_str_list(link_raw, "flags", toml_path))
+   system_libraries = tuple(tomlutil.optional_str_list(link_raw, "system_libraries", toml_path))
+   extra_link_flags = tuple(tomlutil.optional_str_list(link_raw, "flags", toml_path))
 
-   port_filter = tuple(_optional_str_or_str_list(components_raw, "port", toml_path))
-   time_driver = _optional_str(components_raw, "time_driver", toml_path)
-   features = tuple(_optional_str_list(components_raw, "features", toml_path))
+   port_filter = tuple(tomlutil.optional_str_or_str_list(components_raw, "port", toml_path))
+   time_driver = tomlutil.optional_nonempty_str(components_raw, "time_driver", toml_path)
+   features = tuple(tomlutil.optional_str_list(components_raw, "features", toml_path))
 
    return TestCase(
       path=base,
@@ -127,59 +124,3 @@ def load_test_case(path: Path) -> TestCase:
       time_driver=time_driver,
       features=features,
    )
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def _expect_table(data: dict, key: str, path: Path) -> dict:
-   value = data.get(key)
-   if not isinstance(value, dict):
-      raise ValueError(f"{path}: expected [{key}] table")
-   return value
-
-
-def _require_str(data: dict, key: str, path: Path) -> str:
-   value = data.get(key)
-   if not isinstance(value, str):
-      raise ValueError(f"{path}: expected '{key}' to be a string")
-   return value
-
-
-def _optional_str(data: dict, key: str, path: Path) -> str | None:
-   value = data.get(key)
-   if value is None or value == "":
-      return None
-   if not isinstance(value, str):
-      raise ValueError(f"{path}: expected '{key}' to be a non-empty string if present")
-   return value
-
-
-def _optional_str_list(data: dict, key: str, path: Path) -> list[str]:
-   value = data.get(key)
-   if value is None:
-      return []
-   if not isinstance(value, list) or not all(isinstance(x, str) for x in value):
-      raise ValueError(f"{path}: expected '{key}' to be a list of strings")
-   return list(value)
-
-
-def _optional_str_or_str_list(data: dict, key: str, path: Path) -> list[str]:
-   """Accept either a single string or a list of strings; return a list."""
-   value = data.get(key)
-   if value is None:
-      return []
-   if isinstance(value, str):
-      return [value] if value else []
-   if isinstance(value, list) and all(isinstance(x, str) for x in value):
-      return list(value)
-   raise ValueError(f"{path}: expected '{key}' to be a string or list of strings")
-
-
-def _require_existing_file(path: Path, desc: str, toml_path: Path) -> Path:
-   if not path.is_file():
-      raise ValueError(
-         f"{toml_path}: resolved {desc} does not exist or is not a file: {path}"
-      )
-   return path

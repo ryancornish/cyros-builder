@@ -6,6 +6,7 @@ from cyros_builder.commands.base import (
    add_output_arg,
    add_profile_arg,
    add_toolchain_arg,
+   step,
 )
 from cyros_builder.include_tree import populate_include_tree
 from cyros_builder.output import include_dir
@@ -23,17 +24,11 @@ class ExportIncludesCommand(Command):
       add_output_arg(parser)
 
    def run(self, args: Namespace) -> int:
-      try:
+      with step("Failed to resolve invocation"):
          resolved = resolve_invocation(args)
-      except Exception as exc:
-         print(f"Failed to resolve invocation: {exc}")
-         return 1
 
-      try:
+      with step("Failed to populate include tree"):
          populate_include_tree(resolved)
-      except Exception as exc:
-         print(f"Failed to populate include tree: {exc}")
-         return 1
 
       print(f"Wrote include tree: {include_dir(resolved)}")
       return 0

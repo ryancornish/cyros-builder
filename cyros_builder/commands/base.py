@@ -1,6 +1,9 @@
 from abc import ABC, abstractmethod
 from argparse import ArgumentParser, Namespace
+from contextlib import contextmanager
 from pathlib import Path
+
+from cyros_builder.errors import BuilderError
 
 
 class Command(ABC):
@@ -67,3 +70,15 @@ def add_verbose_arg(parser: ArgumentParser) -> None:
       action="store_true",
       help="Print each command before executing it.",
    )
+
+
+@contextmanager
+def step(action_desc: str):
+   """
+   Wrap a command step: on any exception, re-raise as a BuilderError prefixed
+   with action_desc, chained from the original so --debug can still show it.
+   """
+   try:
+      yield
+   except Exception as exc:
+      raise BuilderError(f"{action_desc}: {exc}") from exc

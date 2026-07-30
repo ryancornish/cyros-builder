@@ -7,6 +7,7 @@ from cyros_builder.commands.base import (
    add_output_arg,
    add_profile_arg,
    add_toolchain_arg,
+   step,
 )
 from cyros_builder.output import build_root
 from cyros_builder.resolve import resolve_invocation
@@ -23,11 +24,8 @@ class CleanCommand(Command):
       add_output_arg(parser)
 
    def run(self, args: Namespace) -> int:
-      try:
+      with step("Failed to resolve invocation"):
          resolved = resolve_invocation(args)
-      except Exception as exc:
-         print(f"Failed to resolve invocation: {exc}")
-         return 1
 
       target = build_root(resolved)
 

@@ -1,0 +1,22 @@
+# lto_merged against portb, which unlike porta is actually *executable*: porta
+# has an asm TU whose tool is `as`, and build_compile_args emits -c and -D flags
+# that GNU as rejects. This profile lets the whole lto pipeline run end to end in
+# the builder's own suite with no dependency on ~/cyros.
+[profile]
+name = "lto_portb"
+toolchain = "../toolchains/lto.toml"
+config_header = "../configs/mini.hpp"
+
+[layout]
+source_root = "../../src"
+output_root = "../../out"
+
+[components]
+port = "portb"
+time_driver = "tick"
+
+[features]
+enable = ["alpha"]
+
+[output]
+archive = "libmini.a"

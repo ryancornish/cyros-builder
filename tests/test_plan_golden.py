@@ -182,24 +182,43 @@ def test_simple_archive_strategy():
 
 
 def test_lto_merged_archive_strategy():
-   """partial-link -> objcopy(filter) -> objcopy(rename) -> ar, in that order."""
+   """partial-link -> objcopy(--localize-hidden) -> ar, in that order.
+
+   There used to be a second, purely cosmetic objcopy that renamed the filtered
+   object; the merge now writes a name the single objcopy can consume directly.
+   """
    actions = plan_build(resolve_fixture("lto"))
    tail = [type(a).__name__ for a in actions if not isinstance(a, CompileAction)]
-   assert tail == [
-      "PartialLinkAction", "ObjcopyAction", "ObjcopyAction", "ArchiveAction",
-   ]
+   assert tail == ["PartialLinkAction", "ObjcopyAction", "ArchiveAction"], tail
 
    partial = next(a for a in actions if isinstance(a, PartialLinkAction))
    assert "-flto" in partial.arguments
+   # nolto-rel, not rel: localization only takes effect on real machine code.
    assert "-flinker-output=nolto-rel" in partial.arguments
 
-   objcopies = [a for a in actions if isinstance(a, ObjcopyAction)]
-   keep = [a for a in objcopies if any("--keep-global-symbols" in x for x in a.arguments)]
-   assert len(keep) == 1
-   assert keep[0].arguments[1].endswith("exports.txt")
+   objcopy = next(a for a in actions if isinstance(a, ObjcopyAction))
+   assert "--localize-hidden" in objcopy.arguments
+   assert not any("keep-global-symbols" in x for x in objcopy.arguments), (
+      "the hand-maintained symbol list is gone; hiding is compiler-driven now"
+   )
 
    archive = next(a for a in actions if isinstance(a, ArchiveAction))
    assert len(archive.inputs) == 1, "lto archive holds one merged object"
+   # Stem comes from the archive name, not a hardcoded "cortos".
+   assert archive.inputs[0].name == "libmini.o", archive.inputs[0]
+
+
+def test_lto_objcopy_uses_the_toolchain_tool():
+   """objcopy was hardcoded, which pinned the pipeline to the host binutils and
+   would have broken any cross toolchain (arm-none-eabi-objcopy for STM32)."""
+   actions = plan_build(resolve_fixture("lto"))
+   objcopy = next(a for a in actions if isinstance(a, ObjcopyAction))
+   assert objcopy.arguments[0] == "objcopy", "fixture sets no tools.objcopy, so default"
+
+   custom = resolve_fixture("lto", toolchain=FIXTURE_ROOT / "build" / "toolchains" / "lto_cross.toml")
+   actions = plan_build(custom)
+   objcopy = next(a for a in actions if isinstance(a, ObjcopyAction))
+   assert objcopy.arguments[0] == "my-cross-objcopy", objcopy.arguments[0]
 
 
 def test_archive_contains_every_archivable_object_and_nothing_else():
@@ -223,6 +242,7 @@ def test_header_export_mapping():
 
    assert mapping == {
       "kernel.hpp": "mini/kernel.hpp",
+      "visibility.hpp": "mini/visibility.hpp",
       "port.hpp": "mini/port.hpp",
    }
    for export in exports:

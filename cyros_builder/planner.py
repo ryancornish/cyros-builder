@@ -143,13 +143,19 @@ def _plan_lto_merged_archive(
    archive = (libraries_root / archive_name).resolve()
 
    pipeline_root = (obj_dir(resolved) / "archive").resolve()
-   final_object_stem = "cortos"
+   # Derived from the archive the profile asked for, e.g. libcyros.a -> libcyros.
+   # Was hardcoded to "cortos", a leftover of the CoRTOS rename.
+   final_object_stem = Path(archive_name).stem
 
-   mega    = (pipeline_root / f"{final_object_stem}.mega_combined.o").resolve()
-   filtered = (pipeline_root / f"{final_object_stem}.filtered.o").resolve()
    final_obj = (pipeline_root / f"{final_object_stem}.o").resolve()
-
-   export_file = _resolve_exported_symbols_file(resolved)
+   # When symbols are being localized the merge writes an intermediate that
+   # objcopy then reads; otherwise the merge writes the final object directly.
+   # The old code always emitted a second, purely cosmetic objcopy rename.
+   localize = tc.archive.localize_hidden
+   mega = (
+      (pipeline_root / f"{final_object_stem}.merged.o").resolve()
+      if localize else final_obj
+   )
 
    actions: list = []
 
@@ -176,26 +182,16 @@ def _plan_lto_merged_archive(
 
    current_input = mega
 
-   if tc.archive.filter_exported_symbols:
+   if localize:
+      # --localize-hidden turns every STV_HIDDEN symbol into a local one, so what
+      # stays global is whatever the *source* marked default-visibility. That
+      # replaces a hand-maintained list of mangled names, which had drifted to
+      # the point of listing zero real symbols and therefore localizing the
+      # entire archive. Requires nolto-rel; the toolchain loader rejects the
+      # combination with preserve_lto_sections.
       filter_args = (
-         "objcopy",
-         f"--keep-global-symbols={export_file}",
-         str(current_input),
-         str(filtered),
-      )
-      actions.append(
-         ObjcopyAction(
-            input=current_input,
-            output=filtered,
-            arguments=filter_args,
-            working_directory=working_directory,
-         )
-      )
-      current_input = filtered
-
-   if current_input != final_obj:
-      rename_args = (
-         "objcopy",
+         tc.tools.objcopy or "objcopy",
+         "--localize-hidden",
          str(current_input),
          str(final_obj),
       )
@@ -203,7 +199,7 @@ def _plan_lto_merged_archive(
          ObjcopyAction(
             input=current_input,
             output=final_obj,
-            arguments=rename_args,
+            arguments=filter_args,
             working_directory=working_directory,
          )
       )
@@ -225,22 +221,6 @@ def _plan_lto_merged_archive(
    )
 
    return actions
-
-
-def _resolve_exported_symbols_file(resolved: ResolvedInvocation) -> Path:
-   configured = resolved.toolchain.archive.exported_symbols_file
-   if not configured:
-      raise ValueError(
-         "archive.filter_exported_symbols is true but no "
-         "archive.exported_symbols_file is set in the toolchain."
-      )
-
-   candidate = Path(configured)
-   if not candidate.is_absolute():
-      # Resolve relative to the toolchain file's own directory.
-      candidate = (resolved.toolchain.path.parent / candidate).resolve()
-
-   return candidate
 
 
 def _planned_sources_for_group(group) -> list[PlannedSource]:

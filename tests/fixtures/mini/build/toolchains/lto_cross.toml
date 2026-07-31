@@ -1,0 +1,7 @@
+# Only used by a test: proves tools.objcopy is honoured rather than hardcoded,
+# which is what a cross toolchain (arm-none-eabi-objcopy) needs.
+name = "mini-lto-cross"
+extends = "lto.toml"
+
+[tools]
+objcopy = "my-cross-objcopy"

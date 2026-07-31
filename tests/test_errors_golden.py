@@ -167,9 +167,11 @@ def _profile_no_config_header(root):
    return lambda: plan_build(_resolve(root))
 
 
-def _lto_filter_without_exports_file(root):
+def _localize_hidden_with_preserved_lto(root):
+   # The combination that used to produce a silent no-op: retaining LTO sections
+   # leaves resolution to the plugin, which ignores objcopy's symtab edits.
    _patch(root / "build/toolchains/lto.toml",
-          'exported_symbols_file = "exports.txt"\n', "")
+          "preserve_lto_sections = false", "preserve_lto_sections = true")
    return lambda: plan_build(_resolve(root, "lto"))
 
 
@@ -192,7 +194,7 @@ CASES = {
    "profile_source_root_missing": _profile_source_root_missing,
    "profile_no_toolchain": _profile_no_toolchain,
    "profile_no_config_header": _profile_no_config_header,
-   "lto_filter_without_exports_file": _lto_filter_without_exports_file,
+   "localize_hidden_with_preserved_lto": _localize_hidden_with_preserved_lto,
 }
 
 

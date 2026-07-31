@@ -1,9 +1,19 @@
-# Exercises the lto_merged archive strategy and symbol filtering.
+# Exercises the lto_merged archive strategy and compiler-driven symbol hiding.
+#
+# -fvisibility=hidden makes every symbol hidden unless the source marks it
+# default-visibility (MINI_PUBLIC); localize_hidden then turns the hidden ones
+# into locals in the merged object. preserve_lto_sections must stay false:
+# retaining LTO IR leaves symbol resolution to the plugin, which ignores the ELF
+# symbol table objcopy edits, so hiding would silently do nothing. The toolchain
+# loader rejects that combination outright.
 name = "mini-lto"
 extends = "base.toml"
 
+[flags]
+c_add   = ["-fvisibility=hidden"]
+cxx_add = ["-fvisibility=hidden", "-fvisibility-inlines-hidden"]
+
 [archive]
 strategy = "lto_merged"
-exported_symbols_file = "exports.txt"
-filter_exported_symbols = true
+localize_hidden = true
 preserve_lto_sections = false

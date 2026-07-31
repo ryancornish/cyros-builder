@@ -1,2 +1,3 @@
 #pragma once
-namespace mini { int kernel_entry(); }
+#include "mini/visibility.hpp"
+namespace mini { MINI_PUBLIC int kernel_entry(); }

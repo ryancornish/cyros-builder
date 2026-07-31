@@ -1,3 +1,4 @@
+import os
 from abc import ABC, abstractmethod
 from argparse import ArgumentParser, Namespace
 from contextlib import contextmanager
@@ -55,12 +56,32 @@ def add_output_arg(parser: ArgumentParser, *, required: bool = False) -> None:
    )
 
 
+def default_jobs() -> int:
+   """How many compiles to run at once when -j is not given.
+
+   Prefers the CPU affinity mask over the raw CPU count: affinity respects
+   `taskset` and container/cgroup limits, where os.cpu_count() reports every CPU
+   on the machine regardless. On this box `taskset -c 0-3` gives affinity 4 and
+   cpu_count 24, so using cpu_count would oversubscribe a deliberately
+   restricted run by 6x.
+   """
+   if hasattr(os, "sched_getaffinity"):
+      try:
+         return max(1, len(os.sched_getaffinity(0)))
+      except OSError:
+         pass
+   return max(1, os.cpu_count() or 1)
+
+
 def add_jobs_arg(parser: ArgumentParser) -> None:
    parser.add_argument(
       "-j", "--jobs",
       type=int,
-      default=1,
-      help="Maximum number of parallel jobs (default: 1).",
+      default=default_jobs(),
+      help=(
+         "Maximum number of parallel jobs. Defaults to the number of CPUs "
+         f"available to this process ({default_jobs()} here). Pass -j 1 to build serially."
+      ),
    )
 
 

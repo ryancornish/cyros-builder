@@ -2,6 +2,7 @@ name = "kernel"
 description = "Mini kernel, always built."
 public_headers = [
    "include/mini/kernel.hpp -> mini/kernel.hpp",
+   "include/mini/visibility.hpp -> mini/visibility.hpp",
 ]
 sources = [
    "kernel.cpp",

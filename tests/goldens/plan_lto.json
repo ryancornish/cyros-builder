@@ -6,6 +6,8 @@
       "-DBASE",
       "-DDROP_ME",
       "-std=c++20",
+      "-fvisibility=hidden",
+      "-fvisibility-inlines-hidden",
       "-I",
       "<OUT>/lto/mini-lto/include",
       "-MMD",
@@ -30,6 +32,8 @@
       "-DBASE",
       "-DDROP_ME",
       "-std=c++20",
+      "-fvisibility=hidden",
+      "-fvisibility-inlines-hidden",
       "-I",
       "<OUT>/lto/mini-lto/include",
       "-I",
@@ -56,6 +60,8 @@
       "-DBASE",
       "-DDROP_ME",
       "-std=c++20",
+      "-fvisibility=hidden",
+      "-fvisibility-inlines-hidden",
       "-I",
       "<OUT>/lto/mini-lto/include",
       "-I",
@@ -82,6 +88,7 @@
       "-DBASE",
       "-DDROP_ME",
       "-std=c17",
+      "-fvisibility=hidden",
       "-I",
       "<OUT>/lto/mini-lto/include",
       "-MMD",
@@ -127,6 +134,8 @@
       "-DBASE",
       "-DDROP_ME",
       "-std=c++20",
+      "-fvisibility=hidden",
+      "-fvisibility-inlines-hidden",
       "-I",
       "<OUT>/lto/mini-lto/include",
       "-MMD",
@@ -151,6 +160,8 @@
       "-DBASE",
       "-DDROP_ME",
       "-std=c++20",
+      "-fvisibility=hidden",
+      "-fvisibility-inlines-hidden",
       "-I",
       "<OUT>/lto/mini-lto/include",
       "-MMD",
@@ -179,7 +190,7 @@
       "-fuse-linker-plugin",
       "-Wl,-r",
       "-o",
-      "<OUT>/lto/mini-lto/obj/archive/cortos.mega_combined.o",
+      "<OUT>/lto/mini-lto/obj/archive/libmini.merged.o",
       "<OUT>/lto/mini-lto/obj/userlib/alpha/alpha.o",
       "<OUT>/lto/mini-lto/obj/kernel/kernel.o",
       "<OUT>/lto/mini-lto/obj/_external/porta/vendor.o",
@@ -195,30 +206,19 @@
       "<OUT>/lto/mini-lto/obj/port/porta/porta.o",
       "<OUT>/lto/mini-lto/obj/time/tick/tick.o"
     ],
-    "output": "<OUT>/lto/mini-lto/obj/archive/cortos.mega_combined.o",
+    "output": "<OUT>/lto/mini-lto/obj/archive/libmini.merged.o",
     "working_directory": "<CWD>"
   },
   {
     "action": "ObjcopyAction",
     "arguments": [
       "objcopy",
-      "--keep-global-symbols=<FIXTURE>/build/toolchains/exports.txt",
-      "<OUT>/lto/mini-lto/obj/archive/cortos.mega_combined.o",
-      "<OUT>/lto/mini-lto/obj/archive/cortos.filtered.o"
+      "--localize-hidden",
+      "<OUT>/lto/mini-lto/obj/archive/libmini.merged.o",
+      "<OUT>/lto/mini-lto/obj/archive/libmini.o"
     ],
-    "input": "<OUT>/lto/mini-lto/obj/archive/cortos.mega_combined.o",
-    "output": "<OUT>/lto/mini-lto/obj/archive/cortos.filtered.o",
-    "working_directory": "<CWD>"
-  },
-  {
-    "action": "ObjcopyAction",
-    "arguments": [
-      "objcopy",
-      "<OUT>/lto/mini-lto/obj/archive/cortos.filtered.o",
-      "<OUT>/lto/mini-lto/obj/archive/cortos.o"
-    ],
-    "input": "<OUT>/lto/mini-lto/obj/archive/cortos.filtered.o",
-    "output": "<OUT>/lto/mini-lto/obj/archive/cortos.o",
+    "input": "<OUT>/lto/mini-lto/obj/archive/libmini.merged.o",
+    "output": "<OUT>/lto/mini-lto/obj/archive/libmini.o",
     "working_directory": "<CWD>"
   },
   {
@@ -227,10 +227,10 @@
       "ar",
       "rcs",
       "<OUT>/lto/mini-lto/lib/libmini.a",
-      "<OUT>/lto/mini-lto/obj/archive/cortos.o"
+      "<OUT>/lto/mini-lto/obj/archive/libmini.o"
     ],
     "inputs": [
-      "<OUT>/lto/mini-lto/obj/archive/cortos.o"
+      "<OUT>/lto/mini-lto/obj/archive/libmini.o"
     ],
     "output": "<OUT>/lto/mini-lto/lib/libmini.a",
     "working_directory": "<CWD>"

@@ -15,6 +15,10 @@ class ToolPaths:
    cxx: str
    ar: str
    asm: str | None = None
+   # Only used by the lto_merged archive strategy. Configurable because a cross
+   # toolchain needs its own binutils (arm-none-eabi-objcopy for the STM32 port);
+   # it was hardcoded to "objcopy", which silently pinned the pipeline to the host.
+   objcopy: str | None = None
 
 
 @dataclass(frozen=True)
@@ -37,8 +41,7 @@ class ToolchainSettings:
 @dataclass(frozen=True)
 class ArchiveSettings:
    strategy: str
-   exported_symbols_file: str | None
-   filter_exported_symbols: bool
+   localize_hidden: bool
    preserve_lto_sections: bool
 
 
@@ -194,6 +197,7 @@ def _build_toolchain(path: Path, data: dict, extends_path: Path | None) -> Toolc
          cxx=tomlutil.require_str(tools, "cxx", path),
          ar=tomlutil.require_str(tools, "ar", path),
          asm=tomlutil.optional_str_or_none(tools, "asm", path),
+         objcopy=tomlutil.optional_str_or_none(tools, "objcopy", path),
       ),
       flags=ToolchainFlags(
          common=tuple(tomlutil.require_str_list(flags, "common", path)),
@@ -210,8 +214,7 @@ def _build_toolchain(path: Path, data: dict, extends_path: Path | None) -> Toolc
       ),
       archive=ArchiveSettings(
          strategy=strategy,
-         exported_symbols_file=tomlutil.optional_str_or_none(archive, "exported_symbols_file", path),
-         filter_exported_symbols=tomlutil.optional_bool(archive, "filter_exported_symbols", path, default=False),
+         localize_hidden=tomlutil.optional_bool(archive, "localize_hidden", path, default=False),
          preserve_lto_sections=tomlutil.optional_bool(archive, "preserve_lto_sections", path, default=False),
       ),
    )
@@ -222,7 +225,7 @@ def _build_toolchain(path: Path, data: dict, extends_path: Path | None) -> Toolc
 # -----------------------------------------------------------------------------
 
 _ALLOWED_TOP_LEVEL_KEYS = {"name", "extends", "tools", "flags", "settings", "archive"}
-_ALLOWED_TOOL_KEYS      = {"cc", "cxx", "ar", "asm"}
+_ALLOWED_TOOL_KEYS      = {"cc", "cxx", "ar", "asm", "objcopy"}
 _ALLOWED_FLAG_KEYS = {
    "common", "common_add", "common_remove",
    "c",      "c_add",      "c_remove",
@@ -232,8 +235,7 @@ _ALLOWED_FLAG_KEYS = {
 }
 _ALLOWED_SETTINGS_KEYS = {"family", "debug", "optimization", "warnings_as_errors"}
 _ALLOWED_ARCHIVE_KEYS  = {
-   "strategy", "exported_symbols_file",
-   "filter_exported_symbols", "preserve_lto_sections",
+   "strategy", "localize_hidden", "preserve_lto_sections",
 }
 _ALLOWED_ARCHIVE_STRATEGIES = {"simple", "lto_merged"}
 
@@ -296,6 +298,21 @@ def _validate_archive_table(data: dict, path: Path) -> None:
       if strategy not in _ALLOWED_ARCHIVE_STRATEGIES:
          known = ", ".join(sorted(_ALLOWED_ARCHIVE_STRATEGIES))
          raise ValueError(f"{path}: unknown [archive].strategy '{strategy}'. Known: {known}")
+
+   # These two cannot both hold, and the failure would otherwise be silent.
+   # preserve_lto_sections selects -flinker-output=rel, which keeps the GIMPLE IR
+   # in the object. Verified empirically: objcopy --localize-hidden then finds
+   # nothing marked hidden (the visibility lives in the IR, not the ELF symtab),
+   # the symbol stays global, and a consumer referencing an "internal" symbol
+   # links fine. Hiding requires nolto-rel, where localization is authoritative.
+   if data.get("localize_hidden") and data.get("preserve_lto_sections"):
+      raise ValueError(
+         f"{path}: [archive].localize_hidden and [archive].preserve_lto_sections "
+         f"cannot both be true. Retaining LTO sections leaves symbol resolution to "
+         f"the LTO plugin, which ignores the ELF symbol table objcopy edits, so the "
+         f"hiding would silently do nothing. FIX: set preserve_lto_sections = false "
+         f"to hide internals, or localize_hidden = false to keep LTO sections."
+      )
 
 
 # -----------------------------------------------------------------------------

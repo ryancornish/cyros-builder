@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from cyros_builder.actions import ArchiveAction, CompileAction, ObjcopyAction, PartialLinkAction
-from cyros_builder.compile_args import build_compile_args
+from cyros_builder.compile_args import build_compile_args, depfile_path
 from cyros_builder.output import include_dir, lib_dir, module_dir, obj_dir
 from cyros_builder.project_model import iter_source_groups, select_project
 from cyros_builder.resolve import ResolvedInvocation
@@ -304,15 +304,22 @@ def _compile_args(
    output = output.resolve()
 
    include_dirs = (generated_include_root, *src.private_includes)
+   depfile = depfile_path(output)
 
    if source.suffix.lower() == ".c":
-      return build_compile_args(tc.tools.cc, tc.flags.common, tc.flags.c, include_dirs, source, output)
+      return build_compile_args(
+         tc.tools.cc, tc.flags.common, tc.flags.c, include_dirs, source, output, depfile
+      )
 
    if source.suffix in {".s", ".S"}:
+      # No depfile for assembly: tools.asm may be a bare assembler. See
+      # compile_args.build_compile_args for the reasoning.
       asm = tc.tools.asm or tc.tools.cc
       return build_compile_args(asm, tc.flags.common, tc.flags.asm, include_dirs, source, output)
 
-   return build_compile_args(tc.tools.cxx, tc.flags.common, tc.flags.cxx, include_dirs, source, output)
+   return build_compile_args(
+      tc.tools.cxx, tc.flags.common, tc.flags.cxx, include_dirs, source, output, depfile
+   )
 
 
 def _object_path_for(

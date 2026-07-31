@@ -2,6 +2,7 @@ from argparse import ArgumentParser, Namespace
 
 from cyros_builder.commands.base import (
    Command,
+   add_force_arg,
    add_jobs_arg,
    add_profile_arg,
    add_toolchain_arg,
@@ -26,6 +27,7 @@ class TestCommand(Command):
       # per-test from the profile's output_root.  Exposing them would
       # be misleading.
       add_jobs_arg(parser)
+      add_force_arg(parser)
       add_verbose_arg(parser)
 
       parser.add_argument(
@@ -85,6 +87,7 @@ class TestCommand(Command):
          verbose=args.verbose,
          filter_str=args.filter,
          jobs=args.jobs,
+         force=args.force,
       )
 
       failed = sum(1 for r in results if not r.passed and not r.skipped)

@@ -29,3 +29,9 @@ def manifest_path(resolved: ResolvedInvocation) -> Path:
 
 def compile_db_path(resolved: ResolvedInvocation) -> Path:
    return build_root(resolved) / "compile_commands.json"
+
+
+def build_state_path(resolved: ResolvedInvocation) -> Path:
+   """Where incremental-build bookkeeping lives. Inside build_root, so it is
+   scoped to one (profile, toolchain) and removed by `clean`."""
+   return build_root(resolved) / ".build-state.json"

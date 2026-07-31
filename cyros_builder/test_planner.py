@@ -18,7 +18,7 @@ import dataclasses
 from pathlib import Path
 
 from cyros_builder.actions import CompileTestAction, LinkTestAction, RunTestAction
-from cyros_builder.compile_args import build_compile_args
+from cyros_builder.compile_args import build_compile_args, depfile_path
 from cyros_builder.output import build_root, include_dir, lib_dir
 from cyros_builder.resolve import ResolvedInvocation
 from cyros_builder.test_model import TestCase
@@ -150,6 +150,7 @@ def plan_test(
          tc.tools.cxx, tc.flags.common, tc.flags.cxx,
          (generated_include_root,),
          source.resolve(), obj_path.resolve(),
+         depfile_path(obj_path.resolve()),
       )
 
       compile_actions.append(

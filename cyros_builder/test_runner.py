@@ -22,7 +22,6 @@ any test output appears, making failures easier to read.
 
 from __future__ import annotations
 
-import shutil
 import subprocess
 import time
 from dataclasses import dataclass, field
@@ -34,6 +33,7 @@ from cyros_builder.include_tree import populate_include_tree
 from cyros_builder.planner import plan_build
 from cyros_builder.resolve import ResolvedInvocation
 from cyros_builder.test_model import TestCase
+from cyros_builder.staleness import prune_actions, record_state
 from cyros_builder.test_planner import make_test_resolved, plan_test
 
 
@@ -55,6 +55,7 @@ def run_all_tests(
    verbose: bool = False,
    filter_str: str | None = None,
    jobs: int = 1,
+   force: bool = False,
 ) -> list[TestResult]:
    """
    Build all tests, then run all tests.
@@ -88,7 +89,7 @@ def run_all_tests(
    build_results: dict[str, tuple[bool, str, float, RunTestAction | None]] = {}
    for test in runnable:
       passed, error, duration, run_action = _build_one(
-         resolved=resolved, test=test, verbose=verbose, jobs=jobs,
+         resolved=resolved, test=test, verbose=verbose, jobs=jobs, force=force,
       )
       build_results[test.name] = (passed, error, duration, run_action)
       status = "ok" if passed else "FAILED"
@@ -175,6 +176,7 @@ def _build_one(
    test: TestCase,
    verbose: bool,
    jobs: int = 1,
+   force: bool = False,
 ) -> tuple[bool, str, float, RunTestAction | None]:
    """
    Build the cortos archive and compile+link the test binary.
@@ -183,29 +185,56 @@ def _build_one(
    start = time.monotonic()
    test_resolved = make_test_resolved(resolved, test)
 
-   # Wipe this test's output tree before building. The per-test output root is
-   # keyed only on test name + toolchain, NOT on the resolved component
-   # configuration (port/driver/features).
-   try:
-      if test_resolved.output_root.exists():
-         shutil.rmtree(test_resolved.output_root)
-   except Exception as exc:
-      return False, f"Failed to clean test output dir: {exc}", time.monotonic() - start, None
-
+   # This used to unconditionally rmtree the test's output root, which defeated
+   # cross-run reuse by construction. It is safe to drop now that staleness is
+   # tracked: the old wipe existed because the output path does not encode the
+   # component configuration (features/time_driver), so a changed test.toml
+   # could otherwise reuse objects built for a different configuration. Content
+   # hashing plus the argv hash covers exactly that — a changed configuration
+   # changes the source set and the command lines, so affected objects rebuild,
+   # the archive's member set changes so it re-archives, and any object left
+   # over from the old configuration is simply never referenced again. `--force`
+   # rebuilds without deleting; `clean` deletes.
    try:
       populate_include_tree(test_resolved)
-      execute_actions(plan_build(test_resolved), verbose=verbose, jobs=jobs)
    except Exception as exc:
-      return False, f"Archive build failed: {exc}", time.monotonic() - start, None
+      return False, f"Failed to populate include tree: {exc}", time.monotonic() - start, None
 
-   test_actions = plan_test(resolved=test_resolved, test=test)
+   try:
+      archive_actions = plan_build(test_resolved)
+      test_actions = plan_test(resolved=test_resolved, test=test)
+   except Exception as exc:
+      return False, f"Planning failed: {exc}", time.monotonic() - start, None
+
    build_actions = [a for a in test_actions if not isinstance(a, RunTestAction)]
    run_action = next(a for a in test_actions if isinstance(a, RunTestAction))
 
+   # Two prune/execute rounds, in this order and not merged: the link consumes
+   # the archive, so its staleness can only be judged once the archive on disk
+   # is current. Pruning both up front would compare the link against the
+   # previous archive and could wrongly skip it.
    try:
-      execute_actions(build_actions, verbose=verbose, jobs=jobs)
+      pruned_archive = prune_actions(test_resolved, archive_actions, force=force)
+      execute_actions(pruned_archive.actions, verbose=verbose, jobs=jobs)
+   except Exception as exc:
+      return False, f"Archive build failed: {exc}", time.monotonic() - start, None
+
+   try:
+      pruned_test = prune_actions(test_resolved, build_actions, force=force)
+      execute_actions(pruned_test.actions, verbose=verbose, jobs=jobs)
    except Exception as exc:
       return False, f"Compile/link failed: {exc}", time.monotonic() - start, None
+
+   # One state file per build root, so it must be written from the combined
+   # plan. Recording each round separately would drop the other's entries.
+   try:
+      record_state(
+         test_resolved,
+         archive_actions + build_actions,
+         pruned_archive.actions + pruned_test.actions,
+      )
+   except Exception as exc:
+      return False, f"Failed to record build state: {exc}", time.monotonic() - start, None
 
    return True, "", time.monotonic() - start, run_action
 

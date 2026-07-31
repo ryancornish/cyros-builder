@@ -1,5 +1,6 @@
 import shutil
 from argparse import ArgumentParser, Namespace
+from pathlib import Path
 
 from cyros_builder.commands.base import (
    Command,
@@ -25,14 +26,33 @@ class CleanCommand(Command):
 
    def run(self, args: Namespace) -> int:
       with step("Failed to resolve invocation"):
-         resolved = resolve_invocation(args)
+         # No config header needed to delete a directory, and requiring one made
+         # `clean` unusable with the unit_test_* profiles, which deliberately
+         # omit it. That matters now that `clean` is the only thing that removes
+         # per-test build trees.
+         resolved = resolve_invocation(args, require_config=False)
 
-      target = build_root(resolved)
+      # Per-test build roots as well as the main one. The test runner used to
+      # wipe its own output tree on every run; now that it reuses it across runs
+      # for incremental builds, `clean` is the only thing that deletes it, so it
+      # has to reach there or those trees would be unreachable from the CLI.
+      targets = [build_root(resolved)]
+      tests_root = resolved.output_root / "tests"
+      if tests_root.is_dir():
+         suffix = Path(resolved.profile.name) / resolved.selected_toolchain_name
+         targets.extend(
+            path for path in (child / suffix for child in sorted(tests_root.iterdir()))
+            if path.is_dir()
+         )
 
-      if not target.exists():
-         print(f"Nothing to clean: {target}")
-         return 0
+      removed = 0
+      for target in targets:
+         if not target.exists():
+            continue
+         shutil.rmtree(target)
+         print(f"Cleaned: {target}")
+         removed += 1
 
-      shutil.rmtree(target)
-      print(f"Cleaned: {target}")
+      if not removed:
+         print(f"Nothing to clean: {build_root(resolved)}")
       return 0

@@ -1,6 +1,7 @@
 from .base import (
    Command,
    add_config_arg,
+   add_force_arg,
    add_jobs_arg,
    add_output_arg,
    add_profile_arg,
@@ -17,6 +18,7 @@ from .test import TestCommand
 __all__ = [
    "Command",
    "add_config_arg",
+   "add_force_arg",
    "add_jobs_arg",
    "add_output_arg",
    "add_profile_arg",

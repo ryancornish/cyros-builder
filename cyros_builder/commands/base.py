@@ -64,6 +64,18 @@ def add_jobs_arg(parser: ArgumentParser) -> None:
    )
 
 
+def add_force_arg(parser: ArgumentParser) -> None:
+   parser.add_argument(
+      "--force",
+      action="store_true",
+      help=(
+         "Rebuild everything, bypassing the incremental up-to-date check. "
+         "Unlike --clean-first this deletes nothing, so it is the safe way to "
+         "rule out stale build state."
+      ),
+   )
+
+
 def add_verbose_arg(parser: ArgumentParser) -> None:
    parser.add_argument(
       "-v", "--verbose",

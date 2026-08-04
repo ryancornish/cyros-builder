@@ -149,7 +149,7 @@ def load_ports(profile) -> dict[str, Port]:
    base = (profile.layout.source_root / "port").resolve()
    return _load_source_group_dir(
       base,
-      "*/port.toml",
+      "**/port.toml",
       Port,
       noun="port",
       source_roots_default=["."],

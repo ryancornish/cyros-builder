@@ -56,6 +56,7 @@ def run_all_tests(
    filter_str: str | None = None,
    jobs: int = 1,
    force: bool = False,
+   timeout: float = 0.0,
 ) -> list[TestResult]:
    """
    Build all tests, then run all tests.
@@ -131,7 +132,7 @@ def run_all_tests(
       print(f"  {test.name}")
       # passed implies the build succeeded, which guarantees run_action is set.
       assert run_action is not None
-      run_passed, run_error, run_dur = _run_one(run_action, verbose=verbose)
+      run_passed, run_error, run_dur = _run_one(run_action, verbose=verbose, timeout=timeout)
       results.append(TestResult(
          name=test.name,
          passed=run_passed,
@@ -243,6 +244,7 @@ def _run_one(
    action: RunTestAction,
    *,
    verbose: bool,
+   timeout: float = 0.0,
 ) -> tuple[bool, str, float]:
    """
    Execute a test binary. Returns (passed, error_message, duration_s).
@@ -259,11 +261,16 @@ def _run_one(
          [str(binary)],
          cwd=str(action.working_directory),
          capture_output=False,   # let gtest output flow to the terminal
+         timeout=timeout if timeout > 0 else None,
       )
       duration = time.monotonic() - start
       if result.returncode == 0:
          return True, "", duration
       return False, f"exited with code {result.returncode}", duration
+   except subprocess.TimeoutExpired:
+      # A hang, not a failure. Distinguished because the two want different
+      # investigations: a deadlock or lost wakeup rather than a bad assertion.
+      return False, f"timed out after {timeout:g}s", time.monotonic() - start
    except Exception as exc:
       return False, f"failed to launch: {exc}", time.monotonic() - start
 

@@ -38,6 +38,18 @@ class TestCommand(Command):
          help="Only run tests whose name contains SUBSTRING.",
       )
       parser.add_argument(
+         "--test-timeout",
+         type=float,
+         default=60.0,
+         metavar="SECONDS",
+         help=(
+            "Kill a test binary that runs longer than this and report it as a "
+            "TIMEOUT (default: 60). Use 0 to wait indefinitely. gtest has no "
+            "per-test timeout of its own, so this is the only thing standing "
+            "between a hung test and a stalled suite run."
+         ),
+      )
+      parser.add_argument(
          "--list",
          action="store_true",
          help="List discovered tests without building or running them.",
@@ -88,6 +100,7 @@ class TestCommand(Command):
          filter_str=args.filter,
          jobs=args.jobs,
          force=args.force,
+         timeout=args.test_timeout,
       )
 
       failed = sum(1 for r in results if not r.passed and not r.skipped)

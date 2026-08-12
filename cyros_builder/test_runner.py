@@ -22,6 +22,7 @@ any test output appears, making failures easier to read.
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 import time
 from dataclasses import dataclass, field
@@ -46,6 +47,7 @@ class TestResult:
    build_duration_s: float = 0.0
    run_duration_s: float = 0.0
    error_message: str = ""
+   log_path: Path | None = None
 
 
 def run_all_tests(
@@ -132,13 +134,14 @@ def run_all_tests(
       print(f"  {test.name}")
       # passed implies the build succeeded, which guarantees run_action is set.
       assert run_action is not None
-      run_passed, run_error, run_dur = _run_one(run_action, verbose=verbose, timeout=timeout)
+      run_passed, run_error, run_dur, run_log = _run_one(run_action, verbose=verbose, timeout=timeout)
       results.append(TestResult(
          name=test.name,
          passed=run_passed,
          build_duration_s=build_dur,
          run_duration_s=run_dur,
          error_message=run_error,
+         log_path=run_log,
       ))
 
    print()
@@ -240,39 +243,74 @@ def _build_one(
    return True, "", time.monotonic() - start, run_action
 
 
+def _launch_prefix() -> list[str]:
+   """
+   Run the test unbuffered when stdbuf is available.
+
+   Load-bearing, not a tidiness measure. Test output goes to a log file below,
+   and a file makes libc block-buffer stdout, and abort() does not flush. So a
+   KERNEL PANIC raised by a failing assertion is written into a buffer that is
+   then discarded, and the failure that most wants a diagnostic is the one that
+   arrives with none. That trap is recorded in CLAUDE_cyros.md section 0 and
+   this is the same workaround it prescribes.
+   """
+   stdbuf = shutil.which("stdbuf")
+   return [stdbuf, "-o0", "-e0"] if stdbuf else []
+
+
+def _log_tail(path: Path, lines: int = 40) -> str:
+   try:
+      captured = path.read_text(errors="replace").splitlines()
+   except OSError:
+      return ""
+   return "\n".join(captured[-lines:])
+
+
 def _run_one(
    action: RunTestAction,
    *,
    verbose: bool,
    timeout: float = 0.0,
-) -> tuple[bool, str, float]:
+) -> tuple[bool, str, float, Path]:
    """
-   Execute a test binary. Returns (passed, error_message, duration_s).
+   Execute a test binary. Returns (passed, error_message, duration_s, log_path).
    Kept as a thin wrapper so a future coverage pass can intercept cleanly.
+
+   Output goes to <binary>.log rather than the terminal, and the tail is
+   replayed on failure. A run that fails once in a few hundred is the only kind
+   worth investigating here, and streaming loses it: anything that pipes this
+   command keeps the summary and drops the gtest assertion or panic that says
+   what actually happened. The log is per test and overwritten each run, so it
+   is always the most recent attempt.
    """
    binary = action.binary.resolve()
+   log_path = binary.with_name(binary.name + ".log")
    start = time.monotonic()
 
    if verbose:
       print(f"  $ {binary}")
 
    try:
-      result = subprocess.run(
-         [str(binary)],
-         cwd=str(action.working_directory),
-         capture_output=False,   # let gtest output flow to the terminal
-         timeout=timeout if timeout > 0 else None,
-      )
+      with log_path.open("w") as log:
+         result = subprocess.run(
+            [*_launch_prefix(), str(binary)],
+            cwd=str(action.working_directory),
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            timeout=timeout if timeout > 0 else None,
+         )
       duration = time.monotonic() - start
       if result.returncode == 0:
-         return True, "", duration
-      return False, f"exited with code {result.returncode}", duration
+         if verbose:
+            print(_log_tail(log_path))
+         return True, "", duration, log_path
+      return False, f"exited with code {result.returncode}", duration, log_path
    except subprocess.TimeoutExpired:
       # A hang, not a failure. Distinguished because the two want different
       # investigations: a deadlock or lost wakeup rather than a bad assertion.
-      return False, f"timed out after {timeout:g}s", time.monotonic() - start
+      return False, f"timed out after {timeout:g}s", time.monotonic() - start, log_path
    except Exception as exc:
-      return False, f"failed to launch: {exc}", time.monotonic() - start
+      return False, f"failed to launch: {exc}", time.monotonic() - start, log_path
 
 
 # ---------------------------------------------------------------------------
@@ -315,3 +353,12 @@ def _print_summary(results: list[TestResult]) -> None:
             print(f"  • {r.name}")
             if r.error_message:
                print(f"    {r.error_message}")
+            # The tail, not just the exit code. An intermittent that shows up
+            # once in a few hundred runs is unidentifiable without it, and by
+            # then the run is over.
+            if r.log_path is not None:
+               tail = _log_tail(r.log_path)
+               if tail:
+                  print(f"    output ({r.log_path}):")
+                  for line in tail.splitlines():
+                     print(f"      {line}")

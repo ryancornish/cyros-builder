@@ -9,6 +9,8 @@
       "-fno-exceptions",
       "-I",
       "<OUT>/full/mini-child/include",
+      "-I",
+      "<FIXTURE>/tests/unit",
       "-MMD",
       "-MF",
       "<OUT>/full/mini-child/obj/mini_case.o.d",

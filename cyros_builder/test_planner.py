@@ -21,7 +21,7 @@ from cyros_builder.actions import CompileTestAction, LinkTestAction, RunTestActi
 from cyros_builder.compile_args import build_compile_args, depfile_path
 from cyros_builder.output import build_root, include_dir, lib_dir
 from cyros_builder.resolve import ResolvedInvocation
-from cyros_builder.test_model import TestCase
+from cyros_builder.test_model import TestCase, find_unit_test_root
 
 
 def test_output_root(resolved: ResolvedInvocation, test: TestCase) -> Path:
@@ -142,13 +142,18 @@ def plan_test(
 
    generated_include_root = include_dir(resolved).resolve()
 
+   # The unit test root is on the include path so tests can share helpers, e.g.
+   # #include <common/guarded_stack.hpp>, without relative paths that break when
+   # a test moves between subdirectories.
+   unit_test_root = find_unit_test_root(resolved.profile.layout.source_root).resolve()
+
    for source in test.sources:
       obj_path = (test_obj_dir / source.name).with_suffix(".o")
       obj_paths.append(obj_path)
 
       compile_args = build_compile_args(
          tc.tools.cxx, tc.flags.common, tc.flags.cxx,
-         (generated_include_root,),
+         (generated_include_root, unit_test_root),
          source.resolve(), obj_path.resolve(),
          depfile_path(obj_path.resolve()),
       )

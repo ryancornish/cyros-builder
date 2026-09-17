@@ -68,7 +68,7 @@ def generate_coverage_report(
           "--gcov-tool", _gcov_tool(resolved),
           "--rc", "branch_coverage=1",
           "--rc", "geninfo_unexecuted_blocks=1",
-          "--ignore-errors", "mismatch,unused",
+          "--ignore-errors", "mismatch,unused,inconsistent",
          ],
          verbose=verbose,
          desc=f"lcov capture ({test.name})",
@@ -77,7 +77,15 @@ def generate_coverage_report(
 
    # --- Step 2: merge ---
    merged_info = coverage_root / "merged.info"
-   merge_args = ["lcov", "--output-file", str(merged_info), "--rc", "branch_coverage=1"]
+   # 'inconsistent' is needed at capture and merge (verified with lcov 2.5 and
+   # GCC 16, 2026-09-17). GCC 16 reports gtest's macro-generated TestBody
+   # functions with an end line that disagrees with the function record, and
+   # its libstdc++ headers produce lines that are hit with no evaluated
+   # branches. Both are lcov consistency checks on data the compiler emitted,
+   # not defects in the tree, and each is fatal by default. Extract and genhtml
+   # were checked and do not need it.
+   merge_args = ["lcov", "--output-file", str(merged_info), "--rc", "branch_coverage=1",
+                 "--ignore-errors", "inconsistent"]
    for info in info_files:
       merge_args += ["--add-tracefile", str(info)]
    _run(merge_args, verbose=verbose, desc="lcov merge")

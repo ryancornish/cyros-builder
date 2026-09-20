@@ -1,0 +1,10 @@
+[consumer]
+name = "mini_consumer"
+layer = 9
+kind = "integration"
+
+script = "build.sh"
+binary = "out/bin/main"
+
+[components]
+port = "porta"

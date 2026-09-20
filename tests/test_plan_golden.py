@@ -55,10 +55,11 @@ def test_plan_build_matches_golden(profile):
 def test_plan_test_matches_golden():
    resolved = resolve_fixture("full")
    tests = discover_tests(resolved.profile.layout.source_root)
-   assert [t.name for t in tests] == ["mini_case"]
+   assert [t.name for t in tests] == ["mini_case", "mini_upper"]
 
-   test_resolved = make_test_resolved(resolved, tests[0])
-   actions = plan_test(resolved=test_resolved, test=tests[0])
+   case = next(t for t in tests if t.name == "mini_case")
+   test_resolved = make_test_resolved(resolved, case)
+   actions = plan_test(resolved=test_resolved, test=case)
    assert_golden("plan_test_mini_case", plan_to_jsonable(actions, test_resolved))
 
 

@@ -73,7 +73,7 @@ SCHEMAS: dict[str, dict[str, list[str]]] = {
    "test": {
       "__sections__": ["", "test", "components", "link"],
       "": [],
-      "test": ["name", "source", "config"],
+      "test": ["name", "layer", "kind", "harness_debt", "source", "config"],
       "components": ["port", "time_driver", "features"],
       "link": ["system_libraries", "extra_link_flags"],
    },

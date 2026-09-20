@@ -12,7 +12,8 @@ from cyros_builder.commands.base import (
 )
 from cyros_builder.errors import BuilderError
 from cyros_builder.resolve import resolve_invocation
-from cyros_builder.test_model import discover_tests, find_unit_test_root
+from cyros_builder.consumer_model import discover_consumers
+from cyros_builder.test_model import KINDS, DEFAULT_RUN_KINDS, discover_tests, find_unit_test_root
 from cyros_builder.test_runner import run_all_tests
 
 
@@ -48,6 +49,39 @@ class TestCommand(Command):
             "TIMEOUT (default: 60). Use 0 to wait indefinitely. gtest has no "
             "per-test timeout of its own, so this is the only thing standing "
             "between a hung test and a stalled suite run."
+         ),
+      )
+      parser.add_argument(
+         "--no-consumers",
+         action="store_true",
+         help=(
+            "Skip the consumer projects. They sit at the top of the chain and "
+            "are the only test of the EXPORTED tree, but each one shells out to "
+            "its own build script, so this is the escape hatch when that is in "
+            "the way."
+         ),
+      )
+      parser.add_argument(
+         "--keep-going",
+         action="store_true",
+         help=(
+            "Run every layer even after a lower one fails. Off by default "
+            "because a test standing on a broken layer produces a verdict that "
+            "means nothing, so it is reported BLOCKED instead. Turn this on "
+            "when you want the whole picture rather than the first cause."
+         ),
+      )
+      parser.add_argument(
+         "--kind",
+         action="append",
+         choices=list(KINDS),
+         default=None,
+         metavar="KIND",
+         help=(
+            "Which kinds of test to run, repeatable. Default: "
+            f"{', '.join(DEFAULT_RUN_KINDS)}. A soak is only meaningful as a "
+            "rate over many runs and a measurement asserts nothing, so neither "
+            "runs unless asked for."
          ),
       )
       parser.add_argument(
@@ -88,11 +122,29 @@ class TestCommand(Command):
          print(f"No test.toml files found under {unit_root}")
          return 1
 
+      # Consumers join the same layered run. They are ordinary members of the
+      # chain, at the top of it, and are blocked by a lower failure like
+      # anything else.
+      unit_tests = tests
+      if not args.no_consumers:
+         try:
+            tests = tests + discover_consumers(source_root)
+         except Exception as exc:
+            raise BuilderError(f"Error loading consumer projects: {exc}") from exc
+
       # --list mode: just print discovered tests and exit.
       if args.list:
-         print(f"Discovered {len(tests)} test(s):")
-         for t in tests:
-            print(f"  {t.name:<40} {t.path}")
+         print(f"Discovered {len(tests)} test(s), by layer:")
+         width = max((len(t.name) for t in tests), default=0)
+         last: int | None = None
+         for t in sorted(tests, key=lambda c: (c.layer, c.name)):
+            if t.layer != last:
+               last = t.layer
+               print(f"  layer {t.layer}")
+            note = f"  [{t.kind}]" if t.kind != "unit" else ""
+            if t.harness_debt:
+               note += f"  [runs at layer {t.run_rank}: {t.harness_debt.reason}]"
+            print(f"    {t.name:<{width}}{note}")
          return 0
 
       # Build and run.
@@ -104,6 +156,8 @@ class TestCommand(Command):
          jobs=args.jobs,
          force=args.force,
          timeout=args.test_timeout,
+         keep_going=args.keep_going,
+         kinds=tuple(args.kind) if args.kind else DEFAULT_RUN_KINDS,
       )
 
       failed = sum(1 for r in results if not r.passed and not r.skipped)
@@ -114,11 +168,13 @@ class TestCommand(Command):
       # Skipped tests (e.g. port-locked tests under a non-matching profile)
       # never produced a build directory, so lcov has nothing to capture there.
       if args.coverage:
+         # Consumers are excluded: they are built by their own scripts, not by
+         # an instrumented toolchain, so they produce no gcda for lcov.
          ran_names = {r.name for r in results if not r.skipped}
-         covered_tests = [t for t in tests if t.name in ran_names]
+         covered_tests = [t for t in unit_tests if t.name in ran_names]
 
          print(f"\nCollecting coverage data ({len(covered_tests)} test(s), "
-               f"{len(tests) - len(covered_tests)} skipped)...")
+               f"{len(unit_tests) - len(covered_tests)} skipped)...")
          with step("Coverage report failed"):
             from cyros_builder.coverage import generate_coverage_report
             generate_coverage_report(

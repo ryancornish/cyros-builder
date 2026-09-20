@@ -1,5 +1,6 @@
 [test]
 name   = "mini_case"
+layer  = 1
 source = "mini_case.cpp"
 config = "../../../build/configs/mini.hpp"
 

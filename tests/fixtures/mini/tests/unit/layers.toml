@@ -1,0 +1,10 @@
+# Fixture layer policy. Mirrors the shape of cyros's own layers.toml so the
+# static upward-trust check is exercised against a real file rather than a mock.
+prefix = "mini/"
+
+[headers]
+"mini/kernel.hpp" = 1
+"mini/upper.hpp" = 5
+
+[ungraded]
+headers = ["mini/config.hpp"]

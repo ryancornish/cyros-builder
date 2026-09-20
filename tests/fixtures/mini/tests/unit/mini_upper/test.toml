@@ -1,0 +1,20 @@
+[test]
+name = "mini_upper"
+layer = 3
+kind = "integration"
+
+# Borrows machinery from layer 4 to observe its own subject, so it RUNS after
+# layer 4 but is still ATTRIBUTED to layer 3. Exercises run_rank and the
+# debt-blocking rule in the fixture rather than only in cyros.
+harness_debt = { layer = 4, reason = "needs the layer 4 harness to observe anything" }
+
+source = "mini_upper.cpp"
+config = "../../../build/configs/mini.hpp"
+
+[components]
+port = ["porta"]
+time_driver = "tick"
+features = ["alpha"]
+
+[link]
+system_libraries = ["pthread"]

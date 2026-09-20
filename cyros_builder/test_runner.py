@@ -29,11 +29,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from cyros_builder.actions import RunTestAction
+from cyros_builder.consumer_model import ConsumerCase
 from cyros_builder.executor import execute_actions
 from cyros_builder.include_tree import populate_include_tree
 from cyros_builder.planner import plan_build
 from cyros_builder.resolve import ResolvedInvocation
-from cyros_builder.test_model import TestCase
+from cyros_builder.test_model import DEFAULT_RUN_KINDS, TestCase
 from cyros_builder.staleness import prune_actions, record_state
 from cyros_builder.test_planner import make_test_resolved, plan_test
 
@@ -48,21 +49,35 @@ class TestResult:
    run_duration_s: float = 0.0
    error_message: str = ""
    log_path: Path | None = None
+   # T1. `layer` is for reporting. The three flags below are mutually exclusive
+   # with each other and with a plain pass or fail, and they exist because they
+   # want different reactions from the reader.
+   layer: int = 0
+   kind: str = "unit"
+   blocked: bool = False       # a layer it trusts failed, so its verdict is void
+   blocked_by: str = ""
+   build_failed: bool = False  # never reached the run phase
+
+   @property
+   def ran(self) -> bool:
+      return not (self.skipped or self.blocked or self.build_failed)
 
 
 def run_all_tests(
    *,
    resolved: ResolvedInvocation,
-   tests: list[TestCase],
+   tests: list,            # TestCase | ConsumerCase, ordered and blocked alike
    verbose: bool = False,
    filter_str: str | None = None,
    jobs: int = 1,
    force: bool = False,
    timeout: float = 0.0,
+   keep_going: bool = False,
+   kinds: tuple[str, ...] = DEFAULT_RUN_KINDS,
 ) -> list[TestResult]:
    """
-   Build all tests, then run all tests.
-   Returns one TestResult per test; never raises — failures are captured.
+   Build all tests, then run them lowest layer first.
+   Returns one TestResult per test, and never raises: failures are captured.
    """
    selected = _apply_filter(tests, filter_str)
 
@@ -75,10 +90,11 @@ def run_all_tests(
    runnable: list[TestCase] = []
    skipped_results: list[TestResult] = []
    for test in selected:
-      skip_reason = _skip_reason(test, active_port=active_port)
+      skip_reason = _skip_reason(test, active_port=active_port, kinds=kinds)
       if skip_reason is not None:
          skipped_results.append(TestResult(
             name=test.name, passed=True, skipped=True, skip_reason=skip_reason,
+            layer=test.layer, kind=test.kind,
          ))
       else:
          runnable.append(test)
@@ -100,49 +116,76 @@ def run_all_tests(
       if not passed:
          print(f"         {error}")
 
-   # --- Phase 2: run ---
-   build_failures = [name for name, (ok, _, _, _) in build_results.items() if not ok]
-   if build_failures:
-      print(f"\n{len(build_failures)} test(s) failed to build — skipping run phase.")
-      results = skipped_results + [
-         TestResult(
-            name=test.name,
-            passed=build_results[test.name][0],
-            build_duration_s=build_results[test.name][2],
-            error_message=build_results[test.name][1],
-         )
-         for test in runnable
-      ]
-      _print_summary(results)
-      return results
-
-   print(f"\nRunning {len(runnable)} test(s)...\n")
-
+   # --- Phase 2: run, layer by layer ---
+   #
+   # Ordered by run_rank, and a test whose trusted layers have failed is
+   # reported BLOCKED rather than run. The distinction is the whole point of the
+   # layering: a test standing on a broken foundation produces a verdict that
+   # carries no information, and calling that verdict FAIL invents a defect
+   # while calling it PASS hides one.
    results = list(skipped_results)
-   for test in runnable:
-      passed, error, build_dur, run_action = build_results[test.name]
+   failed_layers: set[int] = set()
+   # Within a rank, a test that BORROWS machinery from this rank runs after the
+   # tests that prove it. Sorting on layer alone put spinlock (layer 1, running
+   # at rank 2) ahead of the bring-up tests it depends on, which is the exact
+   # ordering the debt exists to prevent.
+   ordered = sorted(
+      runnable,
+      key=lambda c: (c.run_rank, 1 if c.harness_debt else 0, c.layer, c.name),
+   )
 
-      if not passed:
+   to_run = [c for c in ordered if build_results[c.name][0]]
+   print(f"\nRunning {len(to_run)} test(s), lowest layer first...\n")
+
+   current_layer: int | None = None
+   for test in ordered:
+      built_ok, build_error, build_dur, run_action = build_results[test.name]
+
+      # A build failure is its own outcome. Previously the runner abandoned the
+      # whole run phase and then reported every test that HAD built as passing
+      # at 0.00s, which turned one broken file into a suite-wide false green.
+      if not built_ok:
          results.append(TestResult(
-            name=test.name,
-            passed=False,
-            build_duration_s=build_dur,
-            error_message=error,
+            name=test.name, passed=False, build_failed=True,
+            layer=test.layer, kind=test.kind,
+            build_duration_s=build_dur, error_message=build_error,
+         ))
+         failed_layers.add(test.layer)
+         continue
+
+      blocker = _blocking_layer(test, failed_layers)
+      if blocker is not None and not keep_going:
+         reason = f"layer {blocker} failed"
+         if test.harness_debt and blocker == test.harness_debt.layer:
+            reason = f"layer {blocker} failed, which this test declares a harness debt on"
+         results.append(TestResult(
+            name=test.name, passed=False, blocked=True, blocked_by=reason,
+            layer=test.layer, kind=test.kind, build_duration_s=build_dur,
          ))
          continue
 
+      if test.run_rank != current_layer:
+         current_layer = test.run_rank
+         print(f"  ── layer {current_layer}")
+
       print(f"  {test.name}")
-      # passed implies the build succeeded, which guarantees run_action is set.
-      assert run_action is not None
+      if run_action is None:
+         # A consumer that declares no binary. Building it IS the assertion:
+         # what it proves is that the exported tree compiles and links.
+         results.append(TestResult(
+            name=test.name, passed=True, layer=test.layer, kind=test.kind,
+            build_duration_s=build_dur,
+         ))
+         continue
       run_passed, run_error, run_dur, run_log = _run_one(run_action, verbose=verbose, timeout=timeout)
       results.append(TestResult(
-         name=test.name,
-         passed=run_passed,
-         build_duration_s=build_dur,
-         run_duration_s=run_dur,
-         error_message=run_error,
-         log_path=run_log,
+         name=test.name, passed=run_passed,
+         layer=test.layer, kind=test.kind,
+         build_duration_s=build_dur, run_duration_s=run_dur,
+         error_message=run_error, log_path=run_log,
       ))
+      if not run_passed:
+         failed_layers.add(test.layer)
 
    print()
    _print_summary(results)
@@ -159,7 +202,23 @@ def _apply_filter(tests: list[TestCase], filter_str: str | None) -> list[TestCas
    return [t for t in tests if filter_str in t.name]
 
 
-def _skip_reason(test: TestCase, *, active_port: str) -> str | None:
+def _blocking_layer(test: TestCase, failed_layers: set[int]) -> int | None:
+   """The lowest failed layer this test trusts, or None if its foundation is sound.
+
+   A test trusts every layer strictly below its own. A test with declared
+   harness debt additionally trusts everything up to and including the debt
+   layer, which is what makes a bring-up failure block the spinlock verdict even
+   though spinlock sits below bring-up.
+
+   Its OWN layer is excluded either way. Tests sharing a layer are siblings
+   proving different subjects, so one failing says nothing about another.
+   """
+   ceiling = test.harness_debt.layer if test.harness_debt else test.layer - 1
+   trusted_and_failed = {n for n in failed_layers if n <= ceiling and n != test.layer}
+   return min(trusted_and_failed) if trusted_and_failed else None
+
+
+def _skip_reason(test, *, active_port: str, kinds: tuple[str, ...]) -> str | None:
    """
    Return a human-readable reason to skip this test, or None to run it.
 
@@ -171,7 +230,55 @@ def _skip_reason(test: TestCase, *, active_port: str) -> str | None:
    if test.port_filter and active_port not in test.port_filter:
       want = ", ".join(test.port_filter)
       return f"locked to port {want}, active port is {active_port}"
+   if test.kind not in kinds:
+      return f"kind {test.kind}, not in this run (--kind {test.kind} to include it)"
    return None
+
+
+def _build_consumer(
+   *, consumer: ConsumerCase, verbose: bool,
+) -> tuple[bool, str, float, RunTestAction | None]:
+   """Build a consumer by running its own build script.
+
+   The script is run from its own directory because every one of them refuses
+   to run from anywhere else, and its output is captured rather than streamed so
+   a passing consumer stays quiet. On failure the tail is replayed, the same way
+   a failing test's log is.
+   """
+   start = time.monotonic()
+
+   # Captured in memory rather than to a log file. The unit-test path writes a
+   # file because a kernel panic must survive abort() without being buffered
+   # away, but a consumer build is just a compiler, and a log file here would
+   # be a stray untracked artefact in the source tree.
+   try:
+      result = subprocess.run(
+         ["bash", str(consumer.script)],
+         cwd=str(consumer.path),
+         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+         text=True, errors="replace",
+      )
+   except Exception as exc:  # noqa: BLE001
+      return False, f"failed to launch {consumer.script.name}: {exc}", time.monotonic() - start, None
+
+   duration = time.monotonic() - start
+   if result.returncode != 0:
+      tail = "\n".join((result.stdout or "").splitlines()[-20:])
+      return (False,
+              f"{consumer.script.name} exited with code {result.returncode}"
+              + (f"\n{tail}" if tail else ""),
+              duration, None)
+
+   if consumer.binary is None:
+      return True, "", duration, None
+   if not consumer.binary.is_file():
+      return False, f"{consumer.script.name} produced no binary at {consumer.binary}", duration, None
+
+   return True, "", duration, RunTestAction(
+      test_name=consumer.name,
+      binary=consumer.binary,
+      working_directory=consumer.path,
+   )
 
 
 def _build_one(
@@ -186,6 +293,9 @@ def _build_one(
    Build the cortos archive and compile+link the test binary.
    Returns (success, error_message, duration_s, run_action | None).
    """
+   if isinstance(test, ConsumerCase):
+      return _build_consumer(consumer=test, verbose=verbose)
+
    start = time.monotonic()
    test_resolved = make_test_resolved(resolved, test)
 
@@ -318,39 +428,82 @@ def _run_one(
 # ---------------------------------------------------------------------------
 
 def _print_summary(results: list[TestResult]) -> None:
-   total   = len(results)
-   passed  = sum(1 for r in results if r.passed)
-   failed  = sum(1 for r in results if not r.passed and not r.skipped)
-   skipped = sum(1 for r in results if r.skipped)
+   total    = len(results)
+   passed   = sum(1 for r in results if r.passed)
+   failed   = sum(1 for r in results if not r.passed and r.ran)
+   built    = sum(1 for r in results if r.build_failed)
+   blocked  = sum(1 for r in results if r.blocked)
+   skipped  = sum(1 for r in results if r.skipped)
 
    name_w = max((len(r.name) for r in results), default=0)
 
    print("─" * 60)
-   for r in results:
+   last_layer: int | None = None
+   for r in sorted(results, key=lambda x: (x.layer, x.name)):
+      if r.layer != last_layer:
+         last_layer = r.layer
+         print(f"  layer {r.layer}")
       if r.skipped:
          status = "SKIP"
+      elif r.build_failed:
+         status = "BUILD"
+      elif r.blocked:
+         status = "BLOCK"
       elif r.passed:
          status = "PASS"
       else:
          status = "FAIL"
-      duration = f"{r.run_duration_s:.2f}s"
-      print(f"  [{status}] {r.name:<{name_w}}  {duration}")
-      if not r.passed and not r.skipped and r.error_message:
-         print(f"         {r.error_message}")
+      # A test that did not run has no duration worth printing. Printing 0.00s
+      # was how an unrun test read as a fast pass.
+      duration = f"{r.run_duration_s:.2f}s" if r.ran else "-"
+      print(f"    [{status:<5}] {r.name:<{name_w}}  {duration:>7}")
+      if r.blocked:
+         print(f"            not run: {r.blocked_by}")
+      elif not r.passed and r.ran and r.error_message:
+         print(f"            {r.error_message}")
 
    print("─" * 60)
    print(f"Results: {passed}/{total} passed", end="")
    if skipped:
       print(f", {skipped} skipped", end="")
+   if blocked:
+      print(f", {blocked} blocked", end="")
+   if built:
+      print(f", {built} did not BUILD", end="")
    if failed:
       print(f", {failed} FAILED", end="")
    print()
 
+   # The headline. When a low layer breaks, the one thing worth saying is which
+   # layer, because everything above it is noise until that is fixed.
+   lowest_broken = min(
+      (r.layer for r in results if not r.passed and not r.skipped and not r.blocked),
+      default=None,
+   )
+   if lowest_broken is not None:
+      culprits = [
+         r.name for r in results
+         if r.layer == lowest_broken and not r.passed and not r.skipped and not r.blocked
+      ]
+      print()
+      print(f"Lowest broken layer: {lowest_broken} ({', '.join(culprits)}).")
+      if blocked:
+         print(f"  {blocked} test(s) above it were not run, and their status is unknown.")
+      print("  Fix this layer before reading anything above it.")
+
+   if built:
+      print("\nFailed to build:")
+      for r in results:
+         if r.build_failed:
+            print(f"  • {r.name} (layer {r.layer})")
+            if r.error_message:
+               print(f"    {r.error_message}")
+
    if failed:
       print("\nFailed tests:")
       for r in results:
-         if not r.passed and not r.skipped:
-            print(f"  • {r.name}")
+         if not r.passed and r.ran:
+            print(f"  • {r.name} (layer {r.layer})")
             if r.error_message:
                print(f"    {r.error_message}")
             # The tail, not just the exit code. An intermittent that shows up

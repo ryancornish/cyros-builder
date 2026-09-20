@@ -216,3 +216,7 @@ __marimo__/
 # directory itself — negating only the files inside would not work, because git
 # does not descend into an excluded directory.
 !tests/fixtures/**/build/
+
+# Written by `uv run --with pytest ...`, which is how the suite is run on a
+# machine without python-pytest installed. Not project configuration.
+uv.lock

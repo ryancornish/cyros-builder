@@ -158,12 +158,27 @@ def plan_test(
       obj_path = (test_obj_dir / source.name).with_suffix(".o")
       obj_paths.append(obj_path)
 
-      compile_args = build_compile_args(
-         tc.tools.cxx, tc.flags.common, tc.flags.cxx,
-         (generated_include_root, *internal_include_roots, unit_test_root),
-         source.resolve(), obj_path.resolve(),
-         depfile_path(obj_path.resolve()),
-      )
+      include_dirs = (generated_include_root, *internal_include_roots, unit_test_root)
+
+      # Pick the compiler by extension, exactly as the library planner does.
+      # Tests were C++-only until the Cortex-M33 port arrived and brought a
+      # board startup file with it, which must be C: compiling it as C++ makes
+      # its call to the test entry point ill-formed, among other divergences.
+      # Assembly is deliberately NOT handled here. No test needs it yet, and
+      # guessing at the asm flag set from one absent caller would be inventing
+      # a contract; add it with its first real user.
+      if source.suffix.lower() == ".c":
+         compile_args = build_compile_args(
+            tc.tools.cc, tc.flags.common, tc.flags.c,
+            include_dirs, source.resolve(), obj_path.resolve(),
+            depfile_path(obj_path.resolve()),
+         )
+      else:
+         compile_args = build_compile_args(
+            tc.tools.cxx, tc.flags.common, tc.flags.cxx,
+            include_dirs, source.resolve(), obj_path.resolve(),
+            depfile_path(obj_path.resolve()),
+         )
 
       compile_actions.append(
          CompileTestAction(
@@ -180,10 +195,17 @@ def plan_test(
       f"-l{lib}" for lib in test.system_libraries
    )
 
+   # Absolute, because the link runs from the output bin directory while the
+   # script is written relative to the test that owns it.
+   script_flags: tuple[str, ...] = (
+      ("-T", str(test.linker_script)) if test.linker_script else ()
+   )
+
    link_args: tuple[str, ...] = (
       tc.tools.cxx,
       *tc.flags.common,
       *tc.flags.link,
+      *script_flags,
       *test.extra_link_flags,
       *[str(obj.resolve()) for obj in obj_paths],
       str(archive.resolve()),
@@ -204,6 +226,8 @@ def plan_test(
       test_name=test.name,
       binary=binary,
       working_directory=test.path,   # run from the test's own directory
+      command=tuple(tc.run_command(binary.resolve())),
+      timeout=tc.runner.timeout if tc.runner else None,
    )
 
    return [*compile_actions, link_action, run_action]

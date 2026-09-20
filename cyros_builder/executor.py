@@ -141,6 +141,21 @@ def _prepare(action) -> None:
    if output is not None:
       output.parent.mkdir(parents=True, exist_ok=True)
 
+      # An archive is rebuilt from scratch, never updated in place.
+      #
+      # `ar rcs` ADDS and REPLACES members but never REMOVES one that is no
+      # longer part of the build, so an object whose source was deleted, or
+      # dropped from a manifest, stays in the archive and keeps contributing
+      # symbols. Found 2026-09-21: a file removed from a port.toml AND deleted
+      # from disk was still supplying a weak definition several builds later,
+      # which silently defeated a link-time dependency check. A build that
+      # succeeds on code that no longer exists is the worst kind of stale.
+      #
+      # Deleting first is what makes the archive a function of the current
+      # manifest. It costs nothing: every member is being written anyway.
+      if isinstance(action, ArchiveAction):
+         output.unlink(missing_ok=True)
+
    cwd = getattr(action, "working_directory", None)
    if cwd is not None:
       cwd.mkdir(parents=True, exist_ok=True)

@@ -79,6 +79,24 @@ class TestCase:
    layer: int
    kind: str
    harness_debt: HarnessDebt | None
+   # Resolved absolute path to a linker script, or None for a hosted test.
+   #
+   # A first-class key rather than something spelled in [link].flags, because
+   # those flags are passed through verbatim while the link runs from the
+   # OUTPUT directory. A relative path in them therefore resolves against the
+   # wrong place and fails at link time with a message that never mentions the
+   # test. Sources are resolved against the test directory, and a script the
+   # test owns deserves the same treatment.
+   #
+   # Last, and defaulted, only so that the many call sites constructing a
+   # hosted TestCase do not all have to spell out that they have no linker
+   # script. It belongs with the other [link] fields above.
+   linker_script: Path | None = None
+   # Does this test need a hosted environment? True by default, which is
+   # correct for every gtest-based test in the suite and means none of them
+   # had to be edited when the first freestanding toolchain arrived. A test
+   # that runs on bare metal sets `hosted = false`.
+   hosted: bool = True
 
    @property
    def run_rank(self) -> int:
@@ -279,6 +297,15 @@ def load_test_case(path: Path) -> TestCase:
    system_libraries = tuple(tomlutil.optional_str_list(link_raw, "system_libraries", toml_path))
    extra_link_flags = tuple(tomlutil.optional_str_list(link_raw, "flags", toml_path))
 
+   linker_script_value = tomlutil.optional_nonempty_str(link_raw, "linker_script", toml_path)
+   linker_script = None
+   if linker_script_value is not None:
+      linker_script = tomlutil.require_existing_file(
+         (base / linker_script_value).resolve(), "link.linker_script", toml_path,
+      )
+
+   hosted = tomlutil.optional_bool(test_raw, "hosted", toml_path, default=True)
+
    layer = _require_layer(test_raw, toml_path)
    kind = _require_kind(test_raw, toml_path)
    harness_debt = _optional_harness_debt(test_raw, toml_path, layer=layer)
@@ -294,6 +321,8 @@ def load_test_case(path: Path) -> TestCase:
       config=config,
       system_libraries=system_libraries,
       extra_link_flags=extra_link_flags,
+      linker_script=linker_script,
+      hosted=hosted,
       port_filter=port_filter,
       time_driver=time_driver,
       features=features,

@@ -121,10 +121,17 @@ def stub_runner(monkeypatch):
 
 
 class _Resolved:
-   """Only the field the runner reads off the profile."""
+   """Only the fields the runner reads off the resolved invocation."""
    class profile:
       class components:
          port = "porta"
+
+   class toolchain:
+      class settings:
+         # These layering tests are all about ordering and blocking, so they
+         # model a host toolchain and every case is hosted. The freestanding
+         # path is covered in test_runner_command.py.
+         hosted = True
 
 
 def test_a_failure_blocks_higher_layers_and_they_are_not_run(stub_runner):

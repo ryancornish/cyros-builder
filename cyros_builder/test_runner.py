@@ -90,7 +90,10 @@ def run_all_tests(
    runnable: list[TestCase] = []
    skipped_results: list[TestResult] = []
    for test in selected:
-      skip_reason = _skip_reason(test, active_port=active_port, kinds=kinds)
+      skip_reason = _skip_reason(
+         test, active_port=active_port, kinds=kinds,
+         hosted_toolchain=resolved.toolchain.settings.hosted,
+      )
       if skip_reason is not None:
          skipped_results.append(TestResult(
             name=test.name, passed=True, skipped=True, skip_reason=skip_reason,
@@ -218,7 +221,9 @@ def _blocking_layer(test: TestCase, failed_layers: set[int]) -> int | None:
    return min(trusted_and_failed) if trusted_and_failed else None
 
 
-def _skip_reason(test, *, active_port: str, kinds: tuple[str, ...]) -> str | None:
+def _skip_reason(
+   test, *, active_port: str, kinds: tuple[str, ...], hosted_toolchain: bool = True,
+) -> str | None:
    """
    Return a human-readable reason to skip this test, or None to run it.
 
@@ -226,7 +231,16 @@ def _skip_reason(test, *, active_port: str, kinds: tuple[str, ...]) -> str | Non
    port. If the test declares a port filter and the active profile port is not
    among the allowed set, the test is skipped — it is locked to a port the
    current profile does not provide.
+
+   Hosted-ness is the other filter, and it is not the same question. A test can
+   be perfectly portable across ports and still need an OS underneath: every
+   gtest binary in the suite does. Asking "which port" cannot express that,
+   because the answer would be "every port that happens to run on Linux", which
+   has to be rewritten each time a port is added. So the toolchain says whether
+   it targets a hosted environment and the test says whether it needs one.
    """
+   if test.hosted and not hosted_toolchain:
+      return "needs a hosted toolchain, this one is freestanding"
    if test.port_filter and active_port not in test.port_filter:
       want = ", ".join(test.port_filter)
       return f"locked to port {want}, active port is {active_port}"
@@ -397,17 +411,25 @@ def _run_one(
    log_path = binary.with_name(binary.name + ".log")
    start = time.monotonic()
 
+   # A cross toolchain supplies its own argv (QEMU, for the Cortex-M port).
+   # Falling back to the bare binary keeps every host test on the old path.
+   argv = list(action.command) if action.command else [str(binary)]
+
+   # An emulated target with no OS cannot be killed by anything but us, so a
+   # toolchain-declared timeout wins over the caller's 0 (meaning "no limit").
+   effective_timeout = timeout if timeout > 0 else action.timeout
+
    if verbose:
-      print(f"  $ {binary}")
+      print(f"  $ {' '.join(argv)}")
 
    try:
       with log_path.open("w") as log:
          result = subprocess.run(
-            [*_launch_prefix(), str(binary)],
+            [*_launch_prefix(), *argv],
             cwd=str(action.working_directory),
             stdout=log,
             stderr=subprocess.STDOUT,
-            timeout=timeout if timeout > 0 else None,
+            timeout=effective_timeout,
          )
       duration = time.monotonic() - start
       if result.returncode == 0:
@@ -418,7 +440,7 @@ def _run_one(
    except subprocess.TimeoutExpired:
       # A hang, not a failure. Distinguished because the two want different
       # investigations: a deadlock or lost wakeup rather than a bad assertion.
-      return False, f"timed out after {timeout:g}s", time.monotonic() - start, log_path
+      return False, f"timed out after {effective_timeout:g}s", time.monotonic() - start, log_path
    except Exception as exc:
       return False, f"failed to launch: {exc}", time.monotonic() - start, log_path
 
@@ -428,8 +450,14 @@ def _run_one(
 # ---------------------------------------------------------------------------
 
 def _print_summary(results: list[TestResult]) -> None:
-   total    = len(results)
-   passed   = sum(1 for r in results if r.passed)
+   # Counted over what RAN, not over what was discovered. A skipped test carries
+   # passed=True so that it does not fail a run, and totalling that against
+   # len(results) reported "32/32 passed" for a suite where 24 tests ran and 8
+   # were skipped. Harmless-looking on a host profile; on the Cortex-M33 profile
+   # it claimed 32/32 when two tests had run. That is the same false green T1
+   # removed for BUILD and BLOCK, surviving in the summary line.
+   ran      = sum(1 for r in results if r.ran)
+   passed   = sum(1 for r in results if r.passed and r.ran)
    failed   = sum(1 for r in results if not r.passed and r.ran)
    built    = sum(1 for r in results if r.build_failed)
    blocked  = sum(1 for r in results if r.blocked)
@@ -463,7 +491,7 @@ def _print_summary(results: list[TestResult]) -> None:
          print(f"            {r.error_message}")
 
    print("─" * 60)
-   print(f"Results: {passed}/{total} passed", end="")
+   print(f"Results: {passed}/{ran} passed", end="")
    if skipped:
       print(f", {skipped} skipped", end="")
    if blocked:

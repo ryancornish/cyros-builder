@@ -49,7 +49,11 @@
   {
     "action": "RunTestAction",
     "binary": "<OUT>/full/mini-child/bin/mini_case",
+    "command": [
+      "<OUT>/full/mini-child/bin/mini_case"
+    ],
     "test_name": "mini_case",
+    "timeout": null,
     "working_directory": "<FIXTURE>/tests/unit/mini_case"
   }
 ]

@@ -35,8 +35,8 @@ class ConsumerCase:
 
    Deliberately exposes the same attributes the layered runner reads off a
    TestCase (`name`, `layer`, `kind`, `harness_debt`, `run_rank`,
-   `port_filter`), so the runner orders and blocks both kinds the same way
-   without knowing which it is holding.
+   `port_filter`, `hosted`), so the runner orders and blocks both kinds the
+   same way without knowing which it is holding.
    """
    path: Path                    # directory containing consumer.toml
    name: str
@@ -46,6 +46,14 @@ class ConsumerCase:
    port_filter: tuple[str, ...]
    script: Path                  # the project's own build script
    binary: Path | None           # what to run afterwards, None to only build
+
+   @property
+   def hosted(self) -> bool:
+      """Always. A consumer is built by its own build.sh with its own compiler
+      pin, which is a host toolchain by construction, so a freestanding profile
+      can never run one. Cross-compiling a consumer would mean teaching the
+      builder to link an application, which is its own piece of work."""
+      return True
 
    @property
    def run_rank(self) -> int:

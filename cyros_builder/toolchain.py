@@ -36,6 +36,17 @@ class ToolchainSettings:
    debug: bool
    optimization: str
    warnings_as_errors: bool
+   # Does this toolchain target an environment with an OS and a full hosted
+   # runtime? True for every host toolchain, and the DEFAULT, so that adding
+   # the key changed nothing for the toolchains that already existed.
+   #
+   # It is what lets a bare-metal profile run the whole suite without drowning
+   # in failures. The 28 host unit tests link gtest and assume a hosted main,
+   # and none of that exists on a Cortex-M33. Expressing that as a port filter
+   # would mean naming every Linux port in every one of those files, and
+   # naming them again whenever a port is added. The real predicate is not
+   # which port, it is whether there is an OS underneath.
+   hosted: bool = True
 
 
 @dataclass(frozen=True)
@@ -43,6 +54,27 @@ class ArchiveSettings:
    strategy: str
    localize_hidden: bool
    preserve_lto_sections: bool
+
+
+@dataclass(frozen=True)
+class RunnerSettings:
+   """
+   How to EXECUTE a binary this toolchain produced.
+
+   A host toolchain has no runner: the binary is a host executable and the
+   runner just execs it. A cross toolchain's output cannot run on the build
+   machine at all, so the toolchain has to say what does run it - for the
+   Cortex-M port, QEMU. It belongs to the toolchain rather than the profile
+   because it is decided by the target triple, and every profile sharing a
+   toolchain shares the answer.
+
+   `command` is the argv to run. The binary is substituted for the
+   "{binary}" placeholder, or appended when no element contains one, since
+   an emulator usually wants it in a specific position (`-kernel <path>`)
+   while a plain wrapper wants it last.
+   """
+   command: tuple[str, ...]
+   timeout: float | None
 
 
 @dataclass(frozen=True)
@@ -54,6 +86,18 @@ class Toolchain:
    flags: ToolchainFlags
    settings: ToolchainSettings
    archive: ArchiveSettings
+   runner: RunnerSettings | None = None
+
+   def run_command(self, binary: Path) -> list[str]:
+      """
+      The argv that executes `binary`. Without a runner this is the binary
+      itself, which is what every host toolchain wants.
+      """
+      if self.runner is None:
+         return [str(binary)]
+      if any("{binary}" in arg for arg in self.runner.command):
+         return [arg.replace("{binary}", str(binary)) for arg in self.runner.command]
+      return [*self.runner.command, str(binary)]
 
 
 # -----------------------------------------------------------------------------
@@ -188,6 +232,15 @@ def _build_toolchain(path: Path, data: dict, extends_path: Path | None) -> Toolc
 
    strategy = tomlutil.optional_str_or_none(archive, "strategy", path) or "simple"
 
+   runner_raw = data.get("runner", {})
+   runner = None
+   if runner_raw:
+      timeout_raw = runner_raw.get("timeout")
+      runner = RunnerSettings(
+         command=tuple(tomlutil.require_str_list(runner_raw, "command", path)),
+         timeout=float(timeout_raw) if timeout_raw is not None else None,
+      )
+
    return Toolchain(
       path=path,
       name=tomlutil.require_str(data, "name", path),
@@ -211,12 +264,14 @@ def _build_toolchain(path: Path, data: dict, extends_path: Path | None) -> Toolc
          debug=tomlutil.require_bool(settings, "debug", path),
          optimization=tomlutil.require_str(settings, "optimization", path),
          warnings_as_errors=tomlutil.require_bool(settings, "warnings_as_errors", path),
+         hosted=tomlutil.optional_bool(settings, "hosted", path, default=True),
       ),
       archive=ArchiveSettings(
          strategy=strategy,
          localize_hidden=tomlutil.optional_bool(archive, "localize_hidden", path, default=False),
          preserve_lto_sections=tomlutil.optional_bool(archive, "preserve_lto_sections", path, default=False),
       ),
+      runner=runner,
    )
 
 
@@ -224,8 +279,9 @@ def _build_toolchain(path: Path, data: dict, extends_path: Path | None) -> Toolc
 # Validation helpers
 # -----------------------------------------------------------------------------
 
-_ALLOWED_TOP_LEVEL_KEYS = {"name", "extends", "tools", "flags", "settings", "archive"}
+_ALLOWED_TOP_LEVEL_KEYS = {"name", "extends", "tools", "flags", "settings", "archive", "runner"}
 _ALLOWED_TOOL_KEYS      = {"cc", "cxx", "ar", "asm", "objcopy"}
+_ALLOWED_RUNNER_KEYS    = {"command", "timeout"}
 _ALLOWED_FLAG_KEYS = {
    "common", "common_add", "common_remove",
    "c",      "c_add",      "c_remove",
@@ -233,7 +289,7 @@ _ALLOWED_FLAG_KEYS = {
    "asm",    "asm_add",    "asm_remove",
    "link",   "link_add",   "link_remove",
 }
-_ALLOWED_SETTINGS_KEYS = {"family", "debug", "optimization", "warnings_as_errors"}
+_ALLOWED_SETTINGS_KEYS = {"family", "debug", "optimization", "warnings_as_errors", "hosted"}
 _ALLOWED_ARCHIVE_KEYS  = {
    "strategy", "localize_hidden", "preserve_lto_sections",
 }
@@ -259,6 +315,7 @@ def _validate_declared_tables(data: dict, path: Path) -> None:
       ("flags", _validate_flags_table),
       ("settings", _validate_settings_table),
       ("archive", _validate_archive_table),
+      ("runner", _validate_runner_table),
    ):
       if key not in data:
          continue
@@ -284,6 +341,26 @@ def _validate_settings_table(data: dict, path: Path) -> None:
    unknown = set(data) - _ALLOWED_SETTINGS_KEYS
    if unknown:
       raise ValueError(f"{path}: unknown keys in [settings]: {', '.join(sorted(unknown))}")
+
+
+def _validate_runner_table(data: dict, path: Path) -> None:
+   unknown = set(data) - _ALLOWED_RUNNER_KEYS
+   if unknown:
+      raise ValueError(f"{path}: unknown keys in [runner]: {', '.join(sorted(unknown))}")
+
+   _ensure_str_list(data.get("command", []), "[runner].command", path)
+   if not data.get("command"):
+      raise ValueError(
+         f"{path}: [runner].command must be a non-empty list of strings. "
+         f"A declared but empty runner would silently exec a cross-built binary "
+         f"on the host, which fails as 'Exec format error' far from its cause."
+      )
+
+   timeout = data.get("timeout")
+   if timeout is not None and not isinstance(timeout, (int, float)):
+      raise ValueError(f"{path}: expected [runner].timeout to be a number of seconds")
+   if isinstance(timeout, (int, float)) and timeout <= 0:
+      raise ValueError(f"{path}: [runner].timeout must be > 0")
 
 
 def _validate_archive_table(data: dict, path: Path) -> None:

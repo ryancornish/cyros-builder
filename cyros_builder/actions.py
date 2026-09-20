@@ -48,6 +48,13 @@ class RunTestAction(TestAction):
    test_name: str
    binary: Path
    working_directory: Path
+   # argv that executes the binary. For a host toolchain this is just the
+   # binary; for a cross toolchain it is the emulator invocation that wraps it.
+   # Resolved at plan time so the runner never has to reach back for a toolchain.
+   command: tuple[str, ...] = ()
+   # Seconds, from the toolchain's [runner].timeout. An emulated target that
+   # deadlocks hangs forever otherwise, with no host process to notice.
+   timeout: float | None = None
 
 
 @dataclass(frozen=True)

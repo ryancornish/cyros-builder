@@ -32,7 +32,7 @@ from cyros_builder.actions import ArchiveAction, CompileAction
 from cyros_builder.compile_args import depfile_path
 from cyros_builder.executor import execute_actions
 from cyros_builder.include_tree import populate_include_tree
-from cyros_builder.output import build_state_path
+from cyros_builder.output import build_state_path, include_dir
 from cyros_builder.planner import plan_build
 from cyros_builder.resolve import resolve_invocation
 from cyros_builder.staleness import (
@@ -455,3 +455,80 @@ def test_include_tree_prunes_emptied_directories(repo, tmp_path):
    populate_include_tree(resolved)
    assert not stray.exists(), "unlisted file survived"
    assert not orphan.exists(), "emptied directory survived"
+
+
+# ---------------------------------------------------------------------------
+# Internal include roots
+#
+# The fixture's port component declares src/port/internal_headers as an internal
+# include root, laid out as an include namespace (mini/port_internal.hpp), and
+# portb.cpp includes it. So every build in this file already proves the root is
+# on the compile path (portb.cpp would not compile otherwise). These pin the
+# rest: nothing internal reaches the build output, visibility is exactly the
+# declared roots, edits track like any header, and a consumer cannot get there.
+# ---------------------------------------------------------------------------
+
+def test_nothing_internal_reaches_the_build_output(repo, tmp_path):
+   resolved = resolve(repo, tmp_path / "out")
+   populate_include_tree(resolved)
+
+   assert not list((tmp_path / "out").rglob("port_internal.hpp")), (
+      "an internal header was copied into the build output"
+   )
+   assert (repo / "src" / "port" / "internal_headers" / "mini" / "port_internal.hpp").is_file()
+
+
+@needs_gcc
+def test_dropping_the_root_makes_its_headers_invisible(repo, tmp_path):
+   """Visibility is exactly the declared roots: remove the declaration and the
+   include stops resolving, which is the same guarantee the exported tree gives
+   when a header is dropped from public_headers."""
+   resolved = resolve(repo, tmp_path / "out")
+   build(resolved)   # builds today, because the root is declared
+
+   component = repo / "src" / "port" / "component.toml"
+   component.write_text(component.read_text().replace('   "internal_headers",\n', ""))
+
+   resolved2 = resolve(repo, tmp_path / "out2")
+   populate_include_tree(resolved2)
+   actions = plan_build(resolved2)
+   pruned = prune_actions(resolved2, actions, force=True)
+   with pytest.raises(subprocess.CalledProcessError):
+      execute_actions(pruned.actions)
+
+
+@needs_gcc
+def test_editing_an_internal_header_rebuilds_its_dependents(repo, tmp_path):
+   """Staleness follows the depfile, which names the header at its source path,
+   so an edit there must invalidate exactly its includers."""
+   resolved = resolve(repo, tmp_path / "out")
+   build(resolved)
+
+   header = repo / "src" / "port" / "internal_headers" / "mini" / "port_internal.hpp"
+   header.write_text(header.read_text().replace("= 7;", "= 8;"))
+
+   _, pruned = build(resolved)
+   rebuilt = names(a for a in pruned.actions if isinstance(a, CompileAction))
+   assert rebuilt == ["portb.o"], rebuilt
+
+
+@needs_gcc
+def test_a_consumer_given_only_the_exported_tree_cannot_reach_an_internal_header(repo, tmp_path):
+   """The whole point, end to end. A consumer compiles against include/ alone.
+   A public header compiles; the internal one is not found."""
+   resolved = resolve(repo, tmp_path / "out")
+   build(resolved)
+
+   def consumer_compiles(include: str) -> bool:
+      tu = tmp_path / "consumer.cpp"
+      tu.write_text(f"#include <{include}>\nint main() {{ return 0; }}\n")
+      result = subprocess.run(
+         ["g++", "-std=c++20", "-fsyntax-only", "-I", str(include_dir(resolved)), str(tu)],
+         capture_output=True, text=True,
+      )
+      return result.returncode == 0
+
+   assert consumer_compiles("mini/port.hpp"), "a public header should be reachable"
+   assert not consumer_compiles("mini/port_internal.hpp"), (
+      "an internal header was reachable from the exported tree"
+   )

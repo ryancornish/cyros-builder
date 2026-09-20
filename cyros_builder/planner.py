@@ -3,7 +3,11 @@ from pathlib import Path
 from cyros_builder.actions import ArchiveAction, CompileAction, ObjcopyAction, PartialLinkAction
 from cyros_builder.compile_args import build_compile_args, depfile_path
 from cyros_builder.output import include_dir, lib_dir, module_dir, obj_dir
-from cyros_builder.project_model import iter_source_groups, select_project
+from cyros_builder.project_model import (
+   collect_internal_include_roots,
+   iter_source_groups,
+   select_project,
+)
 from cyros_builder.resolve import ResolvedInvocation
 
 
@@ -32,6 +36,8 @@ def plan_build(resolved: ResolvedInvocation) -> list:
    objects_root = obj_dir(resolved)
    libraries_root = lib_dir(resolved)
 
+   internal_include_roots = collect_internal_include_roots(selected)
+
    planned_sources: list[PlannedSource] = []
    for group in iter_source_groups(selected):
       planned_sources.extend(_planned_sources_for_group(group))
@@ -49,7 +55,7 @@ def plan_build(resolved: ResolvedInvocation) -> list:
          component_name=src.component,
          component_root=src.component_root,
       )
-      args = _compile_args(tc, resolved, src, obj)
+      args = _compile_args(tc, resolved, src, obj, internal_include_roots)
 
       actions.append(
          CompileAction(
@@ -277,13 +283,24 @@ def _language_for(source: Path) -> str:
 
 
 def _compile_args(
-   tc, resolved: ResolvedInvocation, src: PlannedSource, output: Path
+   tc,
+   resolved: ResolvedInvocation,
+   src: PlannedSource,
+   output: Path,
+   internal_include_roots: tuple[Path, ...] = (),
 ) -> tuple[str, ...]:
    generated_include_root = include_dir(resolved).resolve()
    source = src.path.resolve()
    output = output.resolve()
 
-   include_dirs = (generated_include_root, *src.private_includes)
+   # The exported tree, then the project-internal roots, then the group's own
+   # private dirs. The project's sources see internal headers; consumers, who
+   # only ever get the exported tree, do not.
+   include_dirs = (
+      generated_include_root,
+      *(r.resolve() for r in internal_include_roots),
+      *src.private_includes,
+   )
    depfile = depfile_path(output)
 
    if source.suffix.lower() == ".c":

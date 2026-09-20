@@ -9,6 +9,7 @@ from cyros_builder.commands.base import (
    add_profile_arg,
    add_toolchain_arg,
    add_verbose_arg,
+   format_tomls,
    step,
 )
 from cyros_builder.executor import execute_actions
@@ -44,6 +45,8 @@ class BuildCommand(Command):
    def run(self, args: Namespace) -> int:
       with step("Failed to resolve invocation"):
          resolved = resolve_invocation(args)
+
+      format_tomls(resolved)
 
       with step("Failed to populate include tree"):
          populate_include_tree(resolved)

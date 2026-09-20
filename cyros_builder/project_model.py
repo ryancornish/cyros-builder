@@ -1,3 +1,5 @@
+import posixpath
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -18,6 +20,11 @@ class SourceGroup:
    description: str
    dependencies: tuple[str, ...]
    public_headers: tuple[HeaderExport, ...]
+   # Directories laid out as an include namespace (e.g. <root>/cyros/port/port.h)
+   # that go on the include path of every compile in the project AND its unit
+   # tests, but are never copied anywhere and never exported. Nothing outside the
+   # project can reach them. See _validate_header_visibility.
+   internal_include_roots: tuple[Path, ...]
    public_modules: tuple[str, ...]
    private_modules: tuple[str, ...]
    source_roots: tuple[Path, ...]
@@ -80,7 +87,11 @@ def _load_source_group(
       name=tomlutil.require_str(raw, "name", path),
       description=tomlutil.optional_str_default(raw, "description", path, default=""),
       dependencies=tuple(tomlutil.optional_str_list(raw, "dependencies", path)),
-      public_headers=_parse_public_headers(raw, path),
+      public_headers=_parse_header_exports(raw, path, "public_headers"),
+      internal_include_roots=_resolve_dirs(
+         meta_path=path,
+         values=tomlutil.optional_str_list(raw, "internal_include_roots", path),
+      ),
       public_modules=tuple(tomlutil.optional_str_list(raw, "public_modules", path)),
       private_modules=tuple(tomlutil.optional_str_list(raw, "private_modules", path)),
       source_roots=_resolve_source_roots(
@@ -240,7 +251,7 @@ def select_project(profile: Profile) -> SelectedProject:
    for feat in selected_features.values():
       _validate_source_separation(feat)
 
-   return SelectedProject(
+   selected = SelectedProject(
       kernel=kernel,
       port_component=port_component,
       port=port,
@@ -248,20 +259,42 @@ def select_project(profile: Profile) -> SelectedProject:
       time_driver=time_driver,
       features=selected_features,
    )
+   _validate_header_visibility(selected)
+   return selected
+
+
+def _header_groups(selected: SelectedProject) -> list[SourceGroup]:
+   """Every selected group that can contribute headers, in export order."""
+   groups: list[SourceGroup] = [selected.kernel, selected.port_component, selected.port]
+   if selected.time_component is not None:
+      groups.append(selected.time_component)
+   if selected.time_driver is not None:
+      groups.append(selected.time_driver)
+   for name in sorted(selected.features):
+      groups.append(selected.features[name])
+   return groups
 
 
 def collect_public_headers(selected: SelectedProject) -> tuple[HeaderExport, ...]:
-   exports: list[HeaderExport] = []
-   exports.extend(selected.kernel.public_headers)
-   exports.extend(selected.port_component.public_headers)
-   exports.extend(selected.port.public_headers)
-   if selected.time_component is not None:
-      exports.extend(selected.time_component.public_headers)
-   if selected.time_driver is not None:
-      exports.extend(selected.time_driver.public_headers)
-   for name in sorted(selected.features):
-      exports.extend(selected.features[name].public_headers)
-   return tuple(exports)
+   """Headers copied into the exported include tree."""
+   return tuple(e for g in _header_groups(selected) for e in g.public_headers)
+
+
+def collect_internal_include_roots(selected: SelectedProject) -> tuple[Path, ...]:
+   """Include directories the project's own compiles and unit tests see.
+
+   Deduplicated, first declaration wins, so the order is stable for goldens.
+   Never exported: they are source directories, not generated ones, so there is
+   nothing in the build output for a consumer to stumble into.
+   """
+   seen: set[Path] = set()
+   ordered: list[Path] = []
+   for group in _header_groups(selected):
+      for root in group.internal_include_roots:
+         if root not in seen:
+            seen.add(root)
+            ordered.append(root)
+   return tuple(ordered)
 
 
 def collect_public_modules(selected: SelectedProject) -> tuple[str, ...]:
@@ -334,6 +367,61 @@ def _validate_source_separation(group: SourceGroup) -> None:
       )
 
 
+# `#include <x>` or `#include "x"` at the start of a line. Anchored so that a
+# commented-out include (`// #include <x>`) does not count. A `/* ... */` block
+# that happens to start a line with #include would count, which errs toward
+# reporting a leak rather than missing one.
+_INCLUDE_RE = re.compile(r'^\s*#\s*include\s*[<"]([^>"]+)[>"]', re.MULTILINE)
+
+
+def _validate_header_visibility(selected: SelectedProject) -> None:
+   """Enforce the rule that makes internal headers actually internal.
+
+   No PUBLIC header may include an INTERNAL one. It would compile inside the
+   project, where the internal roots are on the include path, and break every
+   consumer, who only ever gets the exported tree. That failure would surface far
+   from its cause, so it is caught here, naming the file.
+
+   An include counts as internal when it resolves under one of the internal
+   roots and NOT next to the including header (where a quote include looks
+   first). Scanning each public header directly also covers chains: a public
+   header reaching an internal one through another public header is caught at
+   that other header.
+   """
+   roots = collect_internal_include_roots(selected)
+   if not roots:
+      return
+
+   for root in roots:
+      if not root.is_dir():
+         raise ValueError(
+            f"internal_include_roots entry does not exist or is not a directory: {root}"
+         )
+
+   leaks: list[str] = []
+   for export in collect_public_headers(selected):
+      if not export.source.is_file():
+         continue  # populate_include_tree reports a missing header with its own message
+      for target in _INCLUDE_RE.findall(export.source.read_text(errors="replace")):
+         if (export.source.parent / target).is_file():
+            continue  # resolves next to the includer, so it is not the internal one
+         hit = next((root / target for root in roots if (root / target).is_file()), None)
+         if hit is not None:
+            leaks.append(
+               f"{export.source}: public header '{export.destination.as_posix()}' "
+               f"includes internal header '{target}'"
+            )
+
+   if leaks:
+      raise ValueError(
+         "Public header(s) include internal header(s), which are never exported, so "
+         "every consumer including them would fail to compile:\n  "
+         + "\n  ".join(sorted(leaks))
+         + "\nMove the include into a source file, make the includer internal too, "
+         "or export the included header."
+      )
+
+
 def _resolve_source_roots(meta_path: Path, values: list[str]) -> tuple[Path, ...]:
    base = meta_path.parent
    return tuple((base / value).resolve() for value in values)
@@ -354,21 +442,22 @@ def _resolve_dirs(meta_path: Path, values: list[str]) -> tuple[Path, ...]:
    return tuple((base / value).resolve() for value in values)
 
 
-def _parse_public_headers(data: dict, path: Path) -> tuple[HeaderExport, ...]:
-   values = tomlutil.optional_str_list(data, "public_headers", path)
+def _parse_header_exports(data: dict, path: Path, key: str) -> tuple[HeaderExport, ...]:
+   """Parse a `key = ["source -> destination", ...]` list (public or internal)."""
+   values = tomlutil.optional_str_list(data, key, path)
    exports: list[HeaderExport] = []
 
    for value in values:
       if "->" not in value:
          raise ValueError(
-            f"{path}: expected public_headers entry in 'source -> destination' form, got: {value!r}"
+            f"{path}: expected {key} entry in 'source -> destination' form, got: {value!r}"
          )
       source_part, destination_part = value.split("->", 1)
       source_text = source_part.strip()
       destination_text = destination_part.strip()
       if not source_text or not destination_text:
          raise ValueError(
-            f"{path}: expected public_headers entry in 'source -> destination' form, got: {value!r}"
+            f"{path}: expected {key} entry in 'source -> destination' form, got: {value!r}"
          )
       exports.append(
          HeaderExport(

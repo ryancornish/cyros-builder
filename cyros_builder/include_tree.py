@@ -8,20 +8,26 @@ from cyros_builder.resolve import ResolvedInvocation
 
 
 def populate_include_tree(resolved: ResolvedInvocation) -> None:
-   """Populate the single generated public include tree for the selected build.
+   """Populate the one generated include tree: the EXPORTED one.
+
+   Every `public_headers` entry plus the profile's config header at a fixed
+   `cyros/config/config.hpp`. This is what a consumer puts on its include path,
+   so nothing internal goes here.
+
+   Internal headers are NOT generated. They stay in the source tree, laid out as
+   an include namespace, and reach the project's own compiles as extra -I
+   directories (`internal_include_roots`, see planner.py). So there is nothing
+   internal in the build output at all for a consumer to reach.
 
    Idempotent: a header is only written when its content differs from what is
-   already there, and anything no longer in the export set is removed. The
-   previous implementation did `rmtree` then re-copied unconditionally.
+   already there, and anything no longer in the export set is removed.
 
    Note for anyone reading the Phase B plan in the docs: this was listed as a
    hard *blocker* for incremental builds, on the grounds that re-copying gives
    every generated header a fresh mtime so every object would look stale. That
-   reasoning does not hold — `shutil.copy2` copies mtime from the source, so the
+   reasoning does not hold - `shutil.copy2` copies mtime from the source, so the
    old code already produced stable mtimes, and staleness here is decided on
-   content hashes, which makes mtime irrelevant either way. This is done because
-   rewriting a tree on every invocation is pointless I/O and needlessly disturbs
-   anything watching those files, not because incrementality depends on it.
+   content hashes, which makes mtime irrelevant either way.
    """
    selected = select_project(resolved.profile)
    out_include = include_dir(resolved).resolve()

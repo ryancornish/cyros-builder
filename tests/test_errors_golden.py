@@ -113,6 +113,28 @@ def _malformed_public_header(root):
    return lambda: plan_build(_resolve(root))
 
 
+def _missing_internal_include_root(root):
+   # A typo'd root would otherwise fail much later, as a missing header in every
+   # source that includes through it.
+   _patch(root / "src/port/component.toml", '"internal_headers",', '"nowhere",')
+   return lambda: plan_build(_resolve(root))
+
+
+def _public_header_includes_internal(root):
+   # Compiles inside the project, breaks every consumer: caught at load instead.
+   header = root / "src/port/include/mini/port.hpp"
+   header.write_text(header.read_text() + "#include <mini/port_internal.hpp>\n")
+   return lambda: plan_build(_resolve(root))
+
+
+def _public_header_includes_internal_quoted(root):
+   # The quote form with a path. It resolves under the internal root exactly as
+   # the angle form does, so it leaks exactly the same way.
+   header = root / "src/port/include/mini/port.hpp"
+   header.write_text(header.read_text() + '#include "mini/port_internal.hpp"\n')
+   return lambda: plan_build(_resolve(root))
+
+
 def _toolchain_unknown_top_level_key(root):
    _patch(root / "build/toolchains/base.toml", 'name = "mini-base"',
           'name = "mini-base"\nmystery = 1')
@@ -185,6 +207,9 @@ CASES = {
    "feature_depends_on_disabled_feature": _feature_depends_on_disabled_feature,
    "sources_overlap_excluded": _sources_overlap_excluded,
    "malformed_public_header": _malformed_public_header,
+   "missing_internal_include_root": _missing_internal_include_root,
+   "public_header_includes_internal": _public_header_includes_internal,
+   "public_header_includes_internal_quoted": _public_header_includes_internal_quoted,
    "toolchain_unknown_top_level_key": _toolchain_unknown_top_level_key,
    "toolchain_unknown_flag_key": _toolchain_unknown_flag_key,
    "toolchain_unknown_archive_strategy": _toolchain_unknown_archive_strategy,
@@ -246,3 +271,49 @@ def test_each_case_actually_raises(tmp_path, name):
    root = _copy_fixture(tmp_path / name)
    with pytest.raises(Exception):
       CASES[name](root)()
+
+
+
+# ---------------------------------------------------------------------------
+# The internal-header leak check, from the side that must NOT fire
+# ---------------------------------------------------------------------------
+
+def test_a_commented_out_include_of_an_internal_header_is_not_a_leak(tmp_path):
+   root = _copy_fixture(tmp_path / "commented")
+   header = root / "src/port/include/mini/port.hpp"
+   header.write_text(header.read_text() + "// #include <mini/port_internal.hpp>\n")
+   plan_build(_resolve(root))  # must not raise
+
+
+def test_an_include_that_resolves_next_to_the_includer_is_not_a_leak(tmp_path):
+   """A quote include resolves next to the includer FIRST, so a name that also
+   exists under an internal root is not a leak: the compiler never reaches the
+   root. Set up as a genuine shadow, otherwise the rule is not exercised at all
+   (mutation testing caught that: without the shadow the check passes either
+   way)."""
+   root = _copy_fixture(tmp_path / "sibling")
+   (root / "src/port/include/mini/shadow.hpp").write_text("#pragma once\n")
+   (root / "src/port/internal_headers/shadow.hpp").write_text("#pragma once\n")
+   header = root / "src/port/include/mini/port.hpp"
+   header.write_text(header.read_text() + '#include "shadow.hpp"\n')
+   plan_build(_resolve(root))  # must not raise
+
+
+def test_a_public_header_including_another_public_header_is_not_a_leak(tmp_path):
+   """Negative control for the matcher: it must key on INTERNAL destinations,
+   not fire on any include at all."""
+   root = _copy_fixture(tmp_path / "public_to_public")
+   header = root / "src/kernel/include/mini/kernel.hpp"
+   header.write_text(header.read_text() + "#include <mini/port.hpp>\n")
+   plan_build(_resolve(root))  # must not raise
+
+
+def test_every_leaking_public_header_is_reported_not_just_the_first(tmp_path):
+   root = _copy_fixture(tmp_path / "two_leaks")
+   for rel in ("src/port/include/mini/port.hpp", "src/kernel/include/mini/kernel.hpp"):
+      header = root / rel
+      header.write_text(header.read_text() + "#include <mini/port_internal.hpp>\n")
+
+   message = _capture(root, lambda: plan_build(_resolve(root)))
+   assert "'mini/port.hpp' includes internal header" in message
+   assert "'mini/kernel.hpp' includes internal header" in message

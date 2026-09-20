@@ -4,3 +4,10 @@ variants = ["porta", "portb"]
 public_headers = [
    "include/mini/port.hpp -> mini/port.hpp",
 ]
+# Project-internal: this directory is laid out as an include namespace and goes
+# on the include path of every compile in the project and its unit tests. It is
+# never copied anywhere and never exported, so no consumer can reach it. Mirrors
+# how cyros keeps its port contract out of consumers' reach.
+internal_include_roots = [
+   "internal_headers",
+]

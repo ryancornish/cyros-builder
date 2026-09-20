@@ -21,6 +21,7 @@ from cyros_builder.actions import CompileTestAction, LinkTestAction, RunTestActi
 from cyros_builder.compile_args import build_compile_args, depfile_path
 from cyros_builder.output import build_root, include_dir, lib_dir
 from cyros_builder.resolve import ResolvedInvocation
+from cyros_builder.project_model import collect_internal_include_roots, select_project
 from cyros_builder.test_model import TestCase, find_unit_test_root
 
 
@@ -142,6 +143,12 @@ def plan_test(
 
    generated_include_root = include_dir(resolved).resolve()
 
+   # Unit tests are part of the project, so they see the internal include roots
+   # too. The port-contract tests in particular exist to drive the port directly.
+   internal_include_roots = tuple(
+      r.resolve() for r in collect_internal_include_roots(select_project(resolved.profile))
+   )
+
    # The unit test root is on the include path so tests can share helpers, e.g.
    # #include <common/guarded_stack.hpp>, without relative paths that break when
    # a test moves between subdirectories.
@@ -153,7 +160,7 @@ def plan_test(
 
       compile_args = build_compile_args(
          tc.tools.cxx, tc.flags.common, tc.flags.cxx,
-         (generated_include_root, unit_test_root),
+         (generated_include_root, *internal_include_roots, unit_test_root),
          source.resolve(), obj_path.resolve(),
          depfile_path(obj_path.resolve()),
       )

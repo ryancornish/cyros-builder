@@ -115,3 +115,20 @@ def step(action_desc: str):
       yield
    except Exception as exc:
       raise BuilderError(f"{action_desc}: {exc}") from exc
+
+
+def format_tomls(resolved) -> None:
+   """Canonically format every TOML this project owns. Runs on every build and
+   every test run, with no flag to turn it off: the point is that a manifest is
+   always committed formatted, so ordering never comes up in review. Only files
+   that actually change are rewritten, so the usual case touches nothing.
+   See tomlfmt.py for the guarantees (never changes meaning, never loses a key
+   or comment, idempotent)."""
+   from cyros_builder.tomlfmt import format_project
+
+   changed = format_project(
+      source_root=resolved.profile.layout.source_root,
+      profile_path=resolved.profile.path,
+   )
+   for path in changed:
+      print(f"  formatted {path}")

@@ -1,2 +1,3 @@
 #include "mini/port.hpp"
-namespace mini { void port_init() {} }
+#include "mini/port_internal.hpp"   // internal tree: compiles only if it is on the path
+namespace mini { void port_init() { (void)port_internal_value; } }

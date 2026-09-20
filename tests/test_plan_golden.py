@@ -27,8 +27,13 @@ from cyros_builder.actions import (
    PartialLinkAction,
    RunTestAction,
 )
+from cyros_builder.output import include_dir
 from cyros_builder.planner import plan_build
-from cyros_builder.project_model import collect_public_headers, select_project
+from cyros_builder.project_model import (
+   collect_internal_include_roots,
+   collect_public_headers,
+   select_project,
+)
 from cyros_builder.test_model import discover_tests
 from cyros_builder.test_planner import plan_test
 from cyros_builder.test_planner import make_test_resolved
@@ -157,17 +162,57 @@ def test_private_includes_apply_only_to_their_own_group():
    assert private not in alpha.arguments
 
 
-def test_every_compile_gets_exactly_one_generated_include_root():
+def _include_dirs(arguments) -> list[str]:
+   return [arguments[i + 1] for i, a in enumerate(arguments) if a == "-I"]
+
+
+def test_every_compile_sees_the_exported_tree_then_the_internal_roots():
+   """Exported tree first, then the project-internal roots, then private dirs.
+
+   private_includes coming LAST is what lets a group's own directory see the
+   generated tree and the internal roots rather than shadow them.
+   """
    for profile in ALL_PROFILES:
       resolved = resolve_fixture(profile)
+      exported = str(include_dir(resolved).resolve())
+      internal = [str(r.resolve()) for r in
+                  collect_internal_include_roots(select_project(resolved.profile))]
+      assert internal, "the fixture declares an internal root"
       for action in compiles(plan_build(resolved)):
-         includes = [
-            action.arguments[i + 1]
-            for i, a in enumerate(action.arguments)
-            if a == "-I"
-         ]
-         generated = [i for i in includes if i.endswith("/include")]
-         assert len(generated) == 1, (profile, action.source, includes)
+         includes = _include_dirs(action.arguments)
+         assert includes.count(exported) == 1, (profile, action.source, includes)
+         assert includes[:1 + len(internal)] == [exported, *internal], (
+            profile, action.source, includes
+         )
+
+
+def test_unit_test_compiles_see_the_internal_roots():
+   """Unit tests are part of the project, so they get the internal roots, placed
+   between the exported tree and the unit test root."""
+   resolved = resolve_fixture("full")
+   test = discover_tests(resolved.profile.layout.source_root)[0]
+   test_resolved = make_test_resolved(resolved, test)
+   compile_action = next(
+      a for a in plan_test(resolved=test_resolved, test=test)
+      if isinstance(a, CompileTestAction)
+   )
+   includes = _include_dirs(compile_action.arguments)
+   internal = [str(r.resolve()) for r in
+               collect_internal_include_roots(select_project(test_resolved.profile))]
+   assert includes[:1 + len(internal)] == [
+      str(include_dir(test_resolved).resolve()), *internal
+   ], includes
+   assert includes[1 + len(internal)].endswith("/tests/unit"), includes
+
+
+def test_internal_roots_are_source_dirs_and_leave_nothing_in_the_build_output():
+   """The whole point of roots over a generated tree: there is nothing internal
+   in the output for a consumer to stumble into, and nothing to keep in sync."""
+   resolved = resolve_fixture("full")
+   out = resolved.output_root.resolve()
+   for root in collect_internal_include_roots(select_project(resolved.profile)):
+      assert root.is_dir(), root
+      assert out not in root.resolve().parents, f"{root} is inside the build output"
 
 
 def test_simple_archive_strategy():
@@ -248,6 +293,18 @@ def test_header_export_mapping():
    for export in exports:
       assert export.source.is_file(), export.source
       assert not export.destination.is_absolute()
+
+
+def test_internal_roots_are_collected_and_hold_the_internal_header():
+   """The root is collected, and what lives under it is NOT in the exported set.
+   (test_header_export_mapping above pins that the public set is unchanged.)"""
+   selected = select_project(resolve_fixture("full").profile)
+   roots = collect_internal_include_roots(selected)
+   assert len(roots) == 1, roots
+   assert (roots[0] / "mini" / "port_internal.hpp").is_file()
+
+   exported = {str(e.destination) for e in collect_public_headers(selected)}
+   assert "mini/port_internal.hpp" not in exported
 
 
 def test_plan_test_shape():

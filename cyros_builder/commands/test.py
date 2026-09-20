@@ -7,6 +7,7 @@ from cyros_builder.commands.base import (
    add_profile_arg,
    add_toolchain_arg,
    add_verbose_arg,
+   format_tomls,
    step,
 )
 from cyros_builder.errors import BuilderError
@@ -69,6 +70,8 @@ class TestCommand(Command):
       # because each test supplies its own — we defer that check.
       with step("Failed to resolve invocation"):
          resolved = resolve_invocation(args, require_config=False)
+
+      format_tomls(resolved)
 
       source_root = resolved.profile.layout.source_root
 

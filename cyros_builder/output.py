@@ -20,7 +20,10 @@ def module_dir(resolved: ResolvedInvocation) -> Path:
 
 
 def include_dir(resolved: ResolvedInvocation) -> Path:
+   """The EXPORTED include tree: public headers plus the config header. This is
+   what a consumer puts on its include path, so nothing internal goes here."""
    return build_root(resolved) / "include"
+
 
 
 def manifest_path(resolved: ResolvedInvocation) -> Path:

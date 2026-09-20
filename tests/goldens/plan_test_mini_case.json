@@ -10,6 +10,8 @@
       "-I",
       "<OUT>/full/mini-child/include",
       "-I",
+      "<FIXTURE>/src/port/internal_headers",
+      "-I",
       "<FIXTURE>/tests/unit",
       "-MMD",
       "-MF",

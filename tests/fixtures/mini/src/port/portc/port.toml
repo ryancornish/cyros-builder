@@ -1,0 +1,10 @@
+name = "portc"
+description = "A target variant: supplies the MCU half, extends corelayer."
+extends = "corelayer"
+sources = [
+   "portc.cpp",
+]
+system_libraries = ["pthread"]
+public_headers = [
+   "target_traits.hpp -> mini/port_traits.hpp",
+]

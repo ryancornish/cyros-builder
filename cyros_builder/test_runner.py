@@ -35,7 +35,7 @@ from cyros_builder.include_tree import populate_include_tree
 from cyros_builder.planner import plan_build
 from cyros_builder.resolve import ResolvedInvocation
 from cyros_builder.test_model import DEFAULT_RUN_KINDS, TestCase
-from cyros_builder.staleness import prune_actions, record_state
+from cyros_builder.staleness import discard_state, prune_actions, record_state
 from cyros_builder.test_planner import make_test_resolved, plan_test
 
 
@@ -345,12 +345,16 @@ def _build_one(
       pruned_archive = prune_actions(test_resolved, archive_actions, force=force)
       execute_actions(pruned_archive.actions, verbose=verbose, jobs=jobs)
    except Exception as exc:
+      # The failed run may have overwritten outputs the recorded state
+      # describes, so that state can no longer be trusted. See discard_state.
+      discard_state(test_resolved)
       return False, f"Archive build failed: {exc}", time.monotonic() - start, None
 
    try:
       pruned_test = prune_actions(test_resolved, build_actions, force=force)
       execute_actions(pruned_test.actions, verbose=verbose, jobs=jobs)
    except Exception as exc:
+      discard_state(test_resolved)
       return False, f"Compile/link failed: {exc}", time.monotonic() - start, None
 
    # One state file per build root, so it must be written from the combined

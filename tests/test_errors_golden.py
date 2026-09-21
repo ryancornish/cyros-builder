@@ -66,7 +66,7 @@ def _unknown_port(root):
 
 def _port_not_in_variants(root):
    _patch(root / "src/port/component.toml",
-          'variants = ["porta", "portb"]', 'variants = ["portb"]')
+          'variants = ["porta", "portb", "portc"]', 'variants = ["portb"]')
    return lambda: plan_build(_resolve(root))
 
 

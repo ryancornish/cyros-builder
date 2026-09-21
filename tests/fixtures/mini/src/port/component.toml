@@ -1,6 +1,6 @@
 name = "port"
 description = "Port container: contributes shared headers, no objects."
-variants = ["porta", "portb"]
+variants = ["porta", "portb", "portc"]
 public_headers = [
    "include/mini/port.hpp -> mini/port.hpp",
 ]

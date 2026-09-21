@@ -47,6 +47,12 @@ class PortComponent(SourceGroup):
 @dataclass(frozen=True)
 class Port(SourceGroup):
    system_libraries: tuple[str, ...]
+   # Name of another port variant this one builds on, or None. A port contract
+   # is layered (core, then MCU), and `extends` is how a target variant picks up
+   # the core layer that implements the half it does not. Resolved away by
+   # _resolve_extends before anything else sees the Port, so every consumer
+   # below deals in one flat group.
+   extends: str | None
 
 
 @dataclass(frozen=True)
@@ -80,6 +86,7 @@ def _load_source_group(
    *,
    source_roots_default: list[str] | None = None,
    extra_str_list_fields: tuple[str, ...] = (),
+   extra_optional_str_fields: tuple[str, ...] = (),
 ):
    raw = tomlutil.load_toml(path, must_exist=True)
    kwargs = dict(
@@ -114,6 +121,8 @@ def _load_source_group(
    )
    for field in extra_str_list_fields:
       kwargs[field] = tuple(tomlutil.optional_str_list(raw, field, path))
+   for field in extra_optional_str_fields:
+      kwargs[field] = tomlutil.optional_nonempty_str(raw, field, path)
    return cls(**kwargs)
 
 
@@ -125,6 +134,7 @@ def _load_source_group_dir(
    noun: str,
    source_roots_default: list[str] | None = None,
    extra_str_list_fields: tuple[str, ...] = (),
+   extra_optional_str_fields: tuple[str, ...] = (),
 ) -> dict[str, SourceGroup]:
    result: dict[str, SourceGroup] = {}
    if not base.is_dir():
@@ -136,6 +146,7 @@ def _load_source_group_dir(
          cls,
          source_roots_default=source_roots_default,
          extra_str_list_fields=extra_str_list_fields,
+         extra_optional_str_fields=extra_optional_str_fields,
       )
       if item.name in result:
          raise ValueError(f"Duplicate {noun} '{item.name}'")
@@ -165,6 +176,98 @@ def load_ports(profile) -> dict[str, Port]:
       noun="port",
       source_roots_default=["."],
       extra_str_list_fields=("system_libraries",),
+      extra_optional_str_fields=("extends",),
+   )
+
+
+def _extends_chain(port: Port, ports: dict[str, Port]) -> list[Port]:
+   """The selected port and its bases, ROOT FIRST.
+
+   Root-first is what makes the merge below read the way inheritance does: a
+   base contributes first and the derived variant appends to or overrides it.
+   """
+   chain: list[Port] = []
+   seen: list[str] = []
+   current: Port | None = port
+
+   while current is not None:
+      if current.name in seen:
+         cycle = " -> ".join([*seen[seen.index(current.name):], current.name])
+         raise ValueError(
+            f"{current.path}: 'extends' forms a cycle: {cycle}"
+         )
+      seen.append(current.name)
+      chain.append(current)
+
+      if current.extends is None:
+         break
+      base = ports.get(current.extends)
+      if base is None:
+         known = ", ".join(sorted(n for n in ports if n != current.name)) or "<none>"
+         raise ValueError(
+            f"{current.path}: port '{current.name}' extends unknown port "
+            f"'{current.extends}'. Known ports: {known}"
+         )
+      current = base
+
+   chain.reverse()
+   return chain
+
+
+def _resolve_extends(port: Port, ports: dict[str, Port]) -> Port:
+   """Flatten a port and its bases into one group.
+
+   Everything below the model deals in a single Port, so the layering is a
+   MANIFEST concept only: nothing in the planner, the archiver or the staleness
+   tracker learns that a port can have a base. Paths are already absolute by the
+   time they reach here, so the merge is a plain ordered union.
+
+   Two rules worth stating, because they are what makes the split useful:
+     * `sources` and the include/library lists ACCUMULATE, so a core layer's
+       sources and its header directory come along automatically.
+     * `public_headers` OVERRIDE by destination, so a target's port_traits.h
+       replaces its base's rather than colliding with it. That is how an MCU
+       layer sets CYROS_PORT_CORE_COUNT, which the core layer cannot know.
+   """
+   chain = _extends_chain(port, ports)
+   if len(chain) == 1:
+      return port
+
+   def union(attr: str) -> tuple:
+      seen: set = set()
+      ordered: list = []
+      for link in chain:
+         for value in getattr(link, attr):
+            if value not in seen:
+               seen.add(value)
+               ordered.append(value)
+      return tuple(ordered)
+
+   # Keyed by destination, so a later (more derived) link replaces an earlier
+   # one in place rather than appending a second export of the same header.
+   headers: dict[Path, HeaderExport] = {}
+   for link in chain:
+      for export in link.public_headers:
+         headers[export.destination] = export
+
+   return Port(
+      # Identity stays the DERIVED variant's: it is what the profile named, what
+      # the object tree is namespaced under, and what an error should blame.
+      path=port.path,
+      name=port.name,
+      description=port.description,
+      dependencies=union("dependencies"),
+      public_headers=tuple(headers.values()),
+      internal_include_roots=union("internal_include_roots"),
+      public_modules=union("public_modules"),
+      private_modules=union("private_modules"),
+      source_roots=union("source_roots"),
+      sources=union("sources"),
+      sources_excluded_from_archive=union("sources_excluded_from_archive"),
+      generated_includes=port.generated_includes,
+      private_includes=union("private_includes"),
+      system_libraries=union("system_libraries"),
+      extends=None,   # resolved
    )
 
 
@@ -195,7 +298,12 @@ def select_project(profile: Profile) -> SelectedProject:
 
    ports = load_ports(profile)
    if profile.components.port not in ports:
-      known = ", ".join(sorted(ports)) or "<none>"
+      # SELECTABLE ports, not every port.toml on disk. A base layer has a
+      # port.toml and is loaded (something has to extend it) but is deliberately
+      # absent from variants, so offering it here would name something the very
+      # next check refuses.
+      selectable = sorted(set(port_component.variants) & set(ports)) or sorted(ports)
+      known = ", ".join(selectable) or "<none>"
       raise ValueError(f"Unknown port '{profile.components.port}'. Known ports: {known}")
    port = ports[profile.components.port]
 
@@ -205,6 +313,10 @@ def select_project(profile: Profile) -> SelectedProject:
          f"Selected port '{port.name}' is not declared in port/component.toml variants. "
          f"Declared variants: {known}"
       )
+
+   # After the variants gate, so that a base LAYER (which is deliberately absent
+   # from variants) still cannot be selected on its own, only extended.
+   port = _resolve_extends(port, ports)
 
    # Time driver is optional. When components.time_driver is None, no time
    # driver (and no time component metadata) is loaded or compiled into the

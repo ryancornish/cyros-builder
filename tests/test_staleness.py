@@ -532,3 +532,68 @@ def test_a_consumer_given_only_the_exported_tree_cannot_reach_an_internal_header
    assert not consumer_compiles("mini/port_internal.hpp"), (
       "an internal header was reachable from the exported tree"
    )
+
+
+# ---------------------------------------------------------------------------
+# State must not survive a failed build
+#
+# The recorded state exists to answer "is the artifact at this path still the
+# one these inputs produce". A failed run can overwrite artifacts before it
+# stops, which breaks that correspondence, so the state has to go.
+# ---------------------------------------------------------------------------
+
+from cyros_builder.staleness import discard_state
+
+
+@needs_gcc
+def test_reverting_a_source_after_a_failed_build_still_rebuilds(repo, tmp_path):
+   """The bug this exists for, reproduced 2026-09-21 on the Cortex-M33 port.
+
+   Green build, then change a source so it still COMPILES but the link fails,
+   then revert to the exact original bytes. The failed run's compile already
+   overwrote the object. Because the run failed no state was recorded, so the
+   entry still described the ORIGINAL source, which the reverted file matches
+   again. The object was therefore judged up to date and the broken one kept:
+   correct source, failing build, nothing pointing at the cause.
+   """
+   out = tmp_path / "out"
+   resolved = resolve(repo, out)
+
+   sources = sorted((repo / "src").rglob("*.cpp"))
+   assert sources, "fixture has no C++ sources"
+   victim = sources[0]
+   original = victim.read_text()
+
+   build(resolved)
+   assert build_state_path(resolved).exists()
+
+   # A failed run: pretend execution blew up after writing outputs.
+   victim.write_text(original + "\nint cyros_probe_added_symbol() { return 1; }\n")
+   populate_include_tree(resolved)
+   actions = plan_build(resolved)
+   pruned = prune_actions(resolved, actions)
+   execute_actions(pruned.actions)
+   discard_state(resolved)          # what the runner now does on failure
+
+   assert not build_state_path(resolved).exists(), \
+      "a failed build must not leave state describing artifacts it overwrote"
+
+   # Revert to the exact original bytes.
+   victim.write_text(original)
+   populate_include_tree(resolved)
+   actions = plan_build(resolved)
+   pruned = prune_actions(resolved, actions)
+
+   rebuilt = names(pruned.actions)
+   assert victim.with_suffix(".o").name in rebuilt, (
+      "the reverted source must be recompiled. Its object currently came from "
+      "the failed run, and matching the old recorded hash is exactly why the "
+      "old code wrongly skipped it."
+   )
+
+
+def test_discard_state_is_safe_when_there_is_no_state(repo, tmp_path):
+   """First build of a profile, or a second failure in a row."""
+   resolved = resolve(repo, tmp_path / "out")
+   discard_state(resolved)          # must not raise
+   assert not build_state_path(resolved).exists()

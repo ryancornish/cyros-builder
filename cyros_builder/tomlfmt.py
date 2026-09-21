@@ -39,7 +39,7 @@ MAX_WIDTH = 88
 # keys not listed keep their data and sort alphabetically after the known ones,
 # so an unrecognised key is visible rather than lost.
 _MANIFEST_KEYS = [
-   "name", "kind", "description", "dependencies", "variants",
+   "name", "kind", "description", "extends", "dependencies", "variants",
    "source_roots", "sources", "sources_excluded_from_archive",
    "private_includes", "internal_include_roots",
    "public_headers", "public_modules", "private_modules",

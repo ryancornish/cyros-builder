@@ -286,6 +286,38 @@ def _is_stale(action, output: Path, state: dict, rebuilt_outputs: set[Path]) -> 
 # Recording, after a successful execute
 # ---------------------------------------------------------------------------
 
+def discard_state(resolved: ResolvedInvocation) -> None:
+   """Forget everything known about this build root's outputs.
+
+   Called when a build FAILS. The recorded state describes outputs that were on
+   disk at the last successful build, and a failed run may have overwritten some
+   of them before stopping. Leaving the old state in place breaks the invariant
+   the whole mechanism rests on, which is that an entry describes the artifact
+   currently sitting at that path.
+
+   THE BUG THIS FIXES, reproduced 2026-09-21. Take a green build, change a
+   source so that it still COMPILES but fails to LINK, then revert the change
+   to the exact original bytes. The compile in the failed run overwrote the
+   object. Because the run failed, no state was recorded, so the entry still
+   described the ORIGINAL source, which the reverted file now matches again.
+   The next build therefore judged the object up to date and kept the broken
+   one. Correct source, failing build, and nothing anywhere pointing at the
+   stale object.
+
+   Discarding is the blunt fix and the right one here: state is per build root,
+   so the cost is re-examining one test's own outputs, and the alternative
+   (recording partial success per action) buys a little speed for a great deal
+   more that can go wrong.
+   """
+   path = build_state_path(resolved)
+   try:
+      path.unlink(missing_ok=True)
+   except OSError:
+      # Best effort. A state file we cannot remove is not worth failing a build
+      # over, and the next successful build rewrites it anyway.
+      pass
+
+
 def record_state(resolved: ResolvedInvocation, actions: list, executed: list) -> None:
    """Persist state for the whole plan.
 
@@ -294,10 +326,11 @@ def record_state(resolved: ResolvedInvocation, actions: list, executed: list) ->
    set is not knowable any earlier); entries for skipped actions are carried
    forward untouched.
 
-   On failure this is not called at all, so the previous state survives and the
-   next run re-examines everything it had not yet confirmed. That recompiles
-   some work that had in fact succeeded, which is the conservative direction:
-   never record a success that did not happen.
+   On failure this is not called at all. The caller must call discard_state()
+   instead: the previous state can no longer be trusted, because a failed run
+   may have overwritten outputs it describes. Simply leaving it in place is NOT
+   conservative, which is what the earlier version of this comment claimed and
+   got wrong. See discard_state for the case that proves it.
    """
    previous = load_state(resolved)
    executed_ids = {id(a) for a in executed}

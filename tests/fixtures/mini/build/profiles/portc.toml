@@ -1,0 +1,19 @@
+# A port variant that EXTENDS a base layer. See tests/test_port_extends.py.
+[profile]
+name = "portc"
+toolchain = "../toolchains/base.toml"
+config_header = "../configs/mini.hpp"
+
+[layout]
+source_root = "../../src"
+output_root = "../../out"
+
+[components]
+port = "portc"
+time_driver = "tick"
+
+[features]
+enable = []
+
+[output]
+archive = "libmini.a"

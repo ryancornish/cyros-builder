@@ -1,0 +1,10 @@
+name = "corelayer"
+description = "A base LAYER, not selectable: portc extends it."
+sources = [
+   "corelayer.cpp",
+]
+private_includes = ["."]
+system_libraries = ["m"]
+public_headers = [
+   "layer_traits.hpp -> mini/port_traits.hpp",
+]

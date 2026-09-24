@@ -1,6 +1,7 @@
 {
   "feature_depends_on_disabled_feature": "ValueError: Selected feature 'beta' depends on 'alpha', but 'alpha' is not enabled",
   "feature_needs_time_but_none_selected": "ValueError: Selected feature 'timed' depends on 'time', but no time driver is selected. Set components.time_driver in the profile, or (for unit tests) in the test's test.toml.",
+  "feature_source_includes_internal": "ValueError: Feature source(s) include internal header(s). A feature must build on the public API alone, so that userlib exercises the same surface a consumer gets:\n  <FIXTURE>/src/userlib/alpha/alpha.cpp: feature 'alpha' includes internal header 'mini/port_internal.hpp'\nUse the public equivalent, or if there is none, add one to the kernel rather than reaching past it.",
   "localize_hidden_with_preserved_lto": "ValueError: <FIXTURE>/build/toolchains/lto.toml: [archive].localize_hidden and [archive].preserve_lto_sections cannot both be true. Retaining LTO sections leaves symbol resolution to the LTO plugin, which ignores the ELF symbol table objcopy edits, so the hiding would silently do nothing. FIX: set preserve_lto_sections = false to hide internals, or localize_hidden = false to keep LTO sections.",
   "malformed_public_header": "ValueError: <FIXTURE>/src/kernel/component.toml: expected public_headers entry in 'source -> destination' form, got: 'include/mini/kernel.hpp'",
   "missing_internal_include_root": "ValueError: internal_include_roots entry does not exist or is not a directory: <FIXTURE>/src/port/nowhere",

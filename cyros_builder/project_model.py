@@ -372,6 +372,7 @@ def select_project(profile: Profile) -> SelectedProject:
       features=selected_features,
    )
    _validate_header_visibility(selected)
+   _validate_feature_api_surface(selected)
    return selected
 
 
@@ -531,6 +532,55 @@ def _validate_header_visibility(selected: SelectedProject) -> None:
          + "\n  ".join(sorted(leaks))
          + "\nMove the include into a source file, make the includer internal too, "
          "or export the included header."
+      )
+
+
+def _validate_feature_api_surface(selected: SelectedProject) -> None:
+   """A feature builds on the PUBLIC API alone, sources included.
+
+   _validate_header_visibility already covers every public header in the
+   project, features among them. This covers the other half, a feature's own
+   SOURCES, where an internal include compiles fine and leaves no trace in the
+   exported tree.
+
+   The rule exists because userlib is the project's own first consumer. If a
+   feature can reach past the public API, the public API is never exercised by
+   anything that has an alternative, and a gap in it stays invisible until an
+   outside consumer finds it. Keeping the rule mechanical is the only way it
+   survives, because the failure it prevents has no symptom inside the project.
+
+   Scope is every feature, with no opt-out. Components are not covered: the
+   kernel, the port and the time drivers implement the thing features consume,
+   so reaching internal headers is their job.
+
+   Like _validate_header_visibility, this sees only the features the current
+   profile or test selects, so a violation in an unselected feature waits until
+   something selects it. The suite covers every feature across its profiles, so
+   in practice a violation surfaces on the next full run rather than the next
+   build.
+   """
+   roots = collect_internal_include_roots(selected)
+   if not roots:
+      return
+
+   leaks: list[str] = []
+   for feature in selected.features.values():
+      for source in feature.sources:
+         if not source.is_file():
+            continue  # a missing source is reported by the compile step
+         for target in _INCLUDE_RE.findall(source.read_text(errors="replace")):
+            if (source.parent / target).is_file():
+               continue  # resolves next to the includer, so it is not the internal one
+            if any((root / target).is_file() for root in roots):
+               leaks.append(f"{source}: feature '{feature.name}' includes internal header '{target}'")
+
+   if leaks:
+      raise ValueError(
+         "Feature source(s) include internal header(s). A feature must build on the "
+         "public API alone, so that userlib exercises the same surface a consumer gets:\n  "
+         + "\n  ".join(sorted(leaks))
+         + "\nUse the public equivalent, or if there is none, add one to the kernel "
+         "rather than reaching past it."
       )
 
 

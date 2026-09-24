@@ -135,6 +135,15 @@ def _public_header_includes_internal_quoted(root):
    return lambda: plan_build(_resolve(root))
 
 
+def _feature_source_includes_internal(root):
+   # Userlib builds on the PUBLIC API alone (roadmap A1). A feature source
+   # reaching an internal header compiles fine inside the project and leaves no
+   # trace in the exported tree, so nothing downstream would ever notice.
+   source = root / "src/userlib/alpha/alpha.cpp"
+   source.write_text(source.read_text() + "#include <mini/port_internal.hpp>\n")
+   return lambda: plan_build(_resolve(root))
+
+
 def _toolchain_unknown_top_level_key(root):
    _patch(root / "build/toolchains/base.toml", 'name = "mini-base"',
           'name = "mini-base"\nmystery = 1')
@@ -210,6 +219,7 @@ CASES = {
    "missing_internal_include_root": _missing_internal_include_root,
    "public_header_includes_internal": _public_header_includes_internal,
    "public_header_includes_internal_quoted": _public_header_includes_internal_quoted,
+   "feature_source_includes_internal": _feature_source_includes_internal,
    "toolchain_unknown_top_level_key": _toolchain_unknown_top_level_key,
    "toolchain_unknown_flag_key": _toolchain_unknown_flag_key,
    "toolchain_unknown_archive_strategy": _toolchain_unknown_archive_strategy,

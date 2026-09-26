@@ -22,7 +22,9 @@ any test output appears, making failures easier to read.
 
 from __future__ import annotations
 
+import os
 import shutil
+import signal
 import subprocess
 import time
 from dataclasses import dataclass, field
@@ -394,6 +396,19 @@ def _log_tail(path: Path, lines: int = 40) -> str:
    return "\n".join(captured[-lines:])
 
 
+def _kill_process_group(proc: subprocess.Popen) -> None:
+   """SIGKILL the test's whole process group, then reap the test itself.
+
+   The group id is the test's pid, because start_new_session made it the
+   leader. ESRCH is fine: everything in the group may already have exited.
+   """
+   try:
+      os.killpg(proc.pid, signal.SIGKILL)
+   except ProcessLookupError:
+      pass
+   proc.wait()
+
+
 def _run_one(
    action: RunTestAction,
    *,
@@ -428,19 +443,32 @@ def _run_one(
 
    try:
       with log_path.open("w") as log:
-         result = subprocess.run(
+         # A session of its own, so the test and everything it starts share a
+         # process group this runner can kill as one. A test is not always one
+         # process: a gtest death test re-executes the binary as a child, and a
+         # cross test runs under an emulator. Killing only the process launched
+         # here leaves those running after the timeout has been reported.
+         proc = subprocess.Popen(
             [*_launch_prefix(), *argv],
             cwd=str(action.working_directory),
             stdout=log,
             stderr=subprocess.STDOUT,
-            timeout=effective_timeout,
+            start_new_session=True,
          )
+         try:
+            returncode = proc.wait(timeout=effective_timeout)
+         except BaseException:
+            # The timeout, or Ctrl-C, which no longer reaches the test directly
+            # now that it is in a session of its own. Either way nothing it
+            # started may outlive this call.
+            _kill_process_group(proc)
+            raise
       duration = time.monotonic() - start
-      if result.returncode == 0:
+      if returncode == 0:
          if verbose:
             print(_log_tail(log_path))
          return True, "", duration, log_path
-      return False, f"exited with code {result.returncode}", duration, log_path
+      return False, f"exited with code {returncode}", duration, log_path
    except subprocess.TimeoutExpired:
       # A hang, not a failure. Distinguished because the two want different
       # investigations: a deadlock or lost wakeup rather than a bad assertion.

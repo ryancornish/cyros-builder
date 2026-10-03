@@ -1,0 +1,90 @@
+[
+  {
+    "action": "CompileTestAction",
+    "arguments": [
+      "g++",
+      "-DBASE",
+      "-DCHILD",
+      "-std=c++20",
+      "-fno-exceptions",
+      "-I",
+      "<OUT>/board/mini-board/include",
+      "-I",
+      "<FIXTURE>/src/port/internal_headers",
+      "-I",
+      "<FIXTURE>/tests/unit",
+      "-MMD",
+      "-MF",
+      "<OUT>/board/mini-board/obj/mini_upper.o.d",
+      "-c",
+      "<FIXTURE>/tests/unit/mini_upper/mini_upper.cpp",
+      "-o",
+      "<OUT>/board/mini-board/obj/mini_upper.o"
+    ],
+    "output": "<OUT>/board/mini-board/obj/mini_upper.o",
+    "source": "<FIXTURE>/tests/unit/mini_upper/mini_upper.cpp",
+    "test_name": "mini_upper",
+    "working_directory": "<OUT>/board/mini-board"
+  },
+  {
+    "action": "CompileTestAction",
+    "arguments": [
+      "gcc",
+      "-DBASE",
+      "-DCHILD",
+      "-std=c17",
+      "-I",
+      "<OUT>/board/mini-board/include",
+      "-I",
+      "<FIXTURE>/src/port/internal_headers",
+      "-I",
+      "<FIXTURE>/tests/unit",
+      "-MMD",
+      "-MF",
+      "<OUT>/board/mini-board/obj/startup.o.d",
+      "-c",
+      "<FIXTURE>/build/boards/mini_board/startup.c",
+      "-o",
+      "<OUT>/board/mini-board/obj/startup.o"
+    ],
+    "output": "<OUT>/board/mini-board/obj/startup.o",
+    "source": "<FIXTURE>/build/boards/mini_board/startup.c",
+    "test_name": "mini_upper",
+    "working_directory": "<OUT>/board/mini-board"
+  },
+  {
+    "action": "LinkTestAction",
+    "arguments": [
+      "g++",
+      "-DBASE",
+      "-DCHILD",
+      "-T",
+      "<FIXTURE>/build/boards/mini_board/board.ld",
+      "<OUT>/board/mini-board/obj/mini_upper.o",
+      "<OUT>/board/mini-board/obj/startup.o",
+      "<OUT>/board/mini-board/lib/libmini.a",
+      "-lpthread",
+      "-o",
+      "<OUT>/board/mini-board/bin/mini_upper"
+    ],
+    "inputs": [
+      "<OUT>/board/mini-board/obj/mini_upper.o",
+      "<OUT>/board/mini-board/obj/startup.o",
+      "<OUT>/board/mini-board/lib/libmini.a",
+      "<FIXTURE>/build/boards/mini_board/board.ld"
+    ],
+    "output": "<OUT>/board/mini-board/bin/mini_upper",
+    "test_name": "mini_upper",
+    "working_directory": "<OUT>/board/mini-board/bin"
+  },
+  {
+    "action": "RunTestAction",
+    "binary": "<OUT>/board/mini-board/bin/mini_upper",
+    "command": [
+      "<OUT>/board/mini-board/bin/mini_upper"
+    ],
+    "test_name": "mini_upper",
+    "timeout": null,
+    "working_directory": "<FIXTURE>/tests/unit/mini_upper"
+  }
+]

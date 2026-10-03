@@ -348,6 +348,67 @@ def test_a_tests_linker_script_is_a_link_input():
    assert link.arguments[at + 1] == str(test.linker_script), "the script must still reach the linker"
 
 
+def _board_plan(test_name, toolchain=None):
+   resolved = resolve_fixture("board", toolchain=toolchain)
+   test = next(t for t in discover_tests(resolved.profile.layout.source_root)
+               if t.name == test_name)
+   test_resolved = make_test_resolved(resolved, test)
+   return resolved, test_resolved, plan_test(resolved=test_resolved, test=test)
+
+
+def test_a_test_naming_no_linker_script_gets_the_toolchains_board():
+   """The machine's startup file and linker script follow the toolchain.
+
+   The runner names the machine, so the toolchain is what knows how an image
+   boots there. Before 2026-10-03 every Cortex-M test.toml named the AN505's
+   files, which pinned each test to that one machine just as the same tests
+   needed to run on the AN386 too."""
+   from cyros_builder.staleness import declared_inputs
+
+   resolved, test_resolved, actions = _board_plan("mini_upper")
+   board = resolved.toolchain.board
+   assert board is not None
+   assert_golden("plan_test_mini_upper_board", plan_to_jsonable(actions, test_resolved))
+
+   compiled = [a.source for a in actions if isinstance(a, CompileTestAction)]
+   assert compiled[-1] == board.sources[0], "the board's startup file is compiled with the test"
+
+   link = next(a for a in actions if isinstance(a, LinkTestAction))
+   at = link.arguments.index("-T")
+   assert link.arguments[at + 1] == str(board.linker_script)
+   assert board.linker_script in declared_inputs(link), "an edited board script must relink"
+
+
+def test_a_test_naming_its_own_linker_script_owns_its_board():
+   """A second startup file would collide with the test's own, so a test that
+   names a script gets nothing from the toolchain's board."""
+   resolved, _, actions = _board_plan("mini_case")
+   board = resolved.toolchain.board
+
+   compiled = [a.source for a in actions if isinstance(a, CompileTestAction)]
+   assert not set(board.sources) & set(compiled)
+
+   link = next(a for a in actions if isinstance(a, LinkTestAction))
+   assert link.arguments[link.arguments.index("-T") + 1].endswith("mini_case/mini.ld")
+   assert board.linker_script not in link.inputs
+
+
+def test_board_paths_resolve_against_the_toolchain_that_declared_them():
+   """A child toolchain one directory down replaces the sources and inherits the
+   script. Resolving after the merge would read the parent's script relative to
+   the child's directory, where it does not exist."""
+   child = FIXTURE_ROOT / "build" / "toolchains" / "variant" / "board_b.toml"
+   resolved, _, actions = _board_plan("mini_upper", toolchain=child)
+   board = resolved.toolchain.board
+
+   boards = FIXTURE_ROOT / "build" / "boards"
+   assert board.sources == ((boards / "mini_board_b" / "startup_b.c").resolve(),)
+   assert board.linker_script == (boards / "mini_board" / "board.ld").resolve()
+
+   compiled = [a.source for a in actions if isinstance(a, CompileTestAction)]
+   assert board.sources[0] in compiled
+
+
 def test_test_toml_features_replace_profile_features():
    """[components].features in a test.toml REPLACES the profile's set."""
    resolved = resolve_fixture("full")

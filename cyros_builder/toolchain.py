@@ -78,6 +78,32 @@ class RunnerSettings:
 
 
 @dataclass(frozen=True)
+class BoardSettings:
+   """
+   The machine-specific files a freestanding test links: its startup code and
+   its linker script.
+
+   They belong to the toolchain for the reason the runner does. A cross
+   toolchain's runner names one machine, and an image only runs there if it
+   boots through that machine's vector table and was linked for its memory
+   map. While each test.toml named these itself, each test could run on one
+   machine only, and the Cortex-M tests now run on two (QEMU's mps2-an505 and
+   mps2-an386).
+
+   test_planner.plan_test applies them to every test this toolchain builds
+   that names no linker script of its own. A test that does name one owns its
+   board outright and gets neither the sources nor the script, because a
+   second startup file would collide with its own at link time.
+
+   Paths are resolved against the toolchain file that DECLARED them, before
+   inheritance merges anything, so a child may replace the sources and keep
+   its parent's script. The dual-core bench does exactly that.
+   """
+   sources: tuple[Path, ...]
+   linker_script: Path
+
+
+@dataclass(frozen=True)
 class Toolchain:
    path: Path
    name: str
@@ -87,6 +113,7 @@ class Toolchain:
    settings: ToolchainSettings
    archive: ArchiveSettings
    runner: RunnerSettings | None = None
+   board: BoardSettings | None = None
 
    def run_command(self, binary: Path) -> list[str]:
       """
@@ -134,6 +161,7 @@ def _load_and_merge(path: Path, stack: list[Path]) -> tuple[dict, Path | None]:
    raw = tomlutil.load_toml(path)
    _validate_top_level_keys(raw, path)
    _validate_declared_tables(raw, path)
+   _resolve_board_paths(raw, path)
 
    extends_str = tomlutil.optional_str_or_none(raw, "extends", path)
    if extends_str is None:
@@ -150,6 +178,30 @@ def _load_and_merge(path: Path, stack: list[Path]) -> tuple[dict, Path | None]:
    child_data = _deep_copy_dict(raw)
    merged = _merge_dicts(parent_data, child_data, path)
    return merged, extends_path
+
+
+def _resolve_board_paths(data: dict, path: Path) -> None:
+   """
+   Make this file's [board] paths absolute, against this file's directory.
+
+   It has to happen here, per file, because the merge below keeps no record
+   of which file a value came from. Resolving after it would read a parent's
+   paths relative to the child, which lives somewhere else whenever the two
+   are not siblings. Checking existence here also blames the declaring file.
+   """
+   board = data.get("board")
+   if board is None:
+      return
+
+   def resolve(value: str, key: str) -> str:
+      return str(tomlutil.require_existing_file(
+         (path.parent / value).resolve(), f"[board].{key}", path,
+      ))
+
+   if "sources" in board:
+      board["sources"] = [resolve(v, "sources") for v in board["sources"]]
+   if "linker_script" in board:
+      board["linker_script"] = resolve(board["linker_script"], "linker_script")
 
 
 def _merge_dicts(parent: dict, child: dict, path: Path) -> dict:
@@ -241,6 +293,16 @@ def _build_toolchain(path: Path, data: dict, extends_path: Path | None) -> Toolc
          timeout=float(timeout_raw) if timeout_raw is not None else None,
       )
 
+   toolchain_settings = ToolchainSettings(
+      family=tomlutil.require_str(settings, "family", path),
+      debug=tomlutil.require_bool(settings, "debug", path),
+      optimization=tomlutil.require_str(settings, "optimization", path),
+      warnings_as_errors=tomlutil.require_bool(settings, "warnings_as_errors", path),
+      hosted=tomlutil.optional_bool(settings, "hosted", path, default=True),
+   )
+
+   board = _build_board(data.get("board"), toolchain_settings, path)
+
    return Toolchain(
       path=path,
       name=tomlutil.require_str(data, "name", path),
@@ -259,19 +321,46 @@ def _build_toolchain(path: Path, data: dict, extends_path: Path | None) -> Toolc
          asm=tuple(tomlutil.require_str_list(flags, "asm", path)),
          link=tuple(tomlutil.require_str_list(flags, "link", path)),
       ),
-      settings=ToolchainSettings(
-         family=tomlutil.require_str(settings, "family", path),
-         debug=tomlutil.require_bool(settings, "debug", path),
-         optimization=tomlutil.require_str(settings, "optimization", path),
-         warnings_as_errors=tomlutil.require_bool(settings, "warnings_as_errors", path),
-         hosted=tomlutil.optional_bool(settings, "hosted", path, default=True),
-      ),
+      settings=toolchain_settings,
       archive=ArchiveSettings(
          strategy=strategy,
          localize_hidden=tomlutil.optional_bool(archive, "localize_hidden", path, default=False),
          preserve_lto_sections=tomlutil.optional_bool(archive, "preserve_lto_sections", path, default=False),
       ),
       runner=runner,
+      board=board,
+   )
+
+
+def _build_board(board_raw: dict | None, settings: ToolchainSettings, path: Path) -> BoardSettings | None:
+   """
+   The merged [board], checked as a whole. Each file's own keys were checked
+   in _load_and_merge, but a child may declare only part of the table, so
+   whether it is complete is only known here.
+   """
+   if not board_raw:
+      return None
+
+   # A hosted toolchain builds gtest binaries with a hosted main, and a board
+   # would add a reset handler and a linker script to every one of them.
+   if settings.hosted:
+      raise ValueError(
+         f"{path}: [board] is declared but [settings].hosted is true. A board "
+         f"is the startup code and linker script of a bare-metal machine, and "
+         f"a hosted toolchain's tests link against an OS instead. FIX: set "
+         f"hosted = false, or remove [board]."
+      )
+
+   if "linker_script" not in board_raw:
+      raise ValueError(
+         f"{path}: [board] has no linker_script, here or in any toolchain it "
+         f"extends. A board without one would link its tests for the "
+         f"linker's default memory map, which is no machine's."
+      )
+
+   return BoardSettings(
+      sources=tuple(Path(s) for s in board_raw.get("sources", [])),
+      linker_script=Path(board_raw["linker_script"]),
    )
 
 
@@ -279,9 +368,10 @@ def _build_toolchain(path: Path, data: dict, extends_path: Path | None) -> Toolc
 # Validation helpers
 # -----------------------------------------------------------------------------
 
-_ALLOWED_TOP_LEVEL_KEYS = {"name", "extends", "tools", "flags", "settings", "archive", "runner"}
+_ALLOWED_TOP_LEVEL_KEYS = {"name", "extends", "tools", "flags", "settings", "archive", "runner", "board"}
 _ALLOWED_TOOL_KEYS      = {"cc", "cxx", "ar", "asm", "objcopy"}
 _ALLOWED_RUNNER_KEYS    = {"command", "timeout"}
+_ALLOWED_BOARD_KEYS     = {"sources", "linker_script"}
 _ALLOWED_FLAG_KEYS = {
    "common", "common_add", "common_remove",
    "c",      "c_add",      "c_remove",
@@ -316,6 +406,7 @@ def _validate_declared_tables(data: dict, path: Path) -> None:
       ("settings", _validate_settings_table),
       ("archive", _validate_archive_table),
       ("runner", _validate_runner_table),
+      ("board", _validate_board_table),
    ):
       if key not in data:
          continue
@@ -361,6 +452,19 @@ def _validate_runner_table(data: dict, path: Path) -> None:
       raise ValueError(f"{path}: expected [runner].timeout to be a number of seconds")
    if isinstance(timeout, (int, float)) and timeout <= 0:
       raise ValueError(f"{path}: [runner].timeout must be > 0")
+
+
+def _validate_board_table(data: dict, path: Path) -> None:
+   unknown = set(data) - _ALLOWED_BOARD_KEYS
+   if unknown:
+      raise ValueError(f"{path}: unknown keys in [board]: {', '.join(sorted(unknown))}")
+
+   if "sources" in data:
+      _ensure_str_list(data["sources"], "[board].sources", path)
+   if "linker_script" in data:
+      script = data["linker_script"]
+      if not isinstance(script, str) or not script:
+         raise ValueError(f"{path}: expected [board].linker_script to be a non-empty string")
 
 
 def _validate_archive_table(data: dict, path: Path) -> None:

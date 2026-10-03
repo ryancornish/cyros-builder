@@ -117,8 +117,9 @@ def plan_test(
 ) -> list:
    """
    Return [CompileTestAction, ..., LinkTestAction, RunTestAction] for one test.
-   One CompileTestAction is emitted per file in test.sources; all resulting
-   objects are linked together with the cortos archive into a single binary.
+   One CompileTestAction is emitted per file in test.sources, plus one per
+   board source when the toolchain supplies the board; all resulting objects
+   are linked together with the cortos archive into a single binary.
 
    The cortos archive is assumed to already exist at the path returned by
    lib_dir() for the per-test resolved invocation — the runner is responsible
@@ -132,10 +133,19 @@ def plan_test(
    binary  = bin_dir / test.name
    archive = lib_dir(resolved) / resolved.profile.output.archive
 
+   # The machine's startup files and linker script come from the toolchain,
+   # whose runner names the machine, unless the test names a linker script
+   # itself and so owns its board (toolchain.BoardSettings).
+   sources = test.sources
+   linker_script = test.linker_script
+   if tc.board is not None and linker_script is None:
+      sources = (*sources, *tc.board.sources)
+      linker_script = tc.board.linker_script
+
    # Object files are named after the source's basename, so two sources with
    # the same filename (even in different subdirectories) would silently
    # overwrite each other's object file. Guard against that up front.
-   _check_no_basename_collisions(test)
+   _check_no_basename_collisions(test.name, sources)
 
    # --- compile: one action per source file ---
    compile_actions: list[CompileTestAction] = []
@@ -154,7 +164,7 @@ def plan_test(
    # a test moves between subdirectories.
    unit_test_root = find_unit_test_root(resolved.profile.layout.source_root).resolve()
 
-   for source in test.sources:
+   for source in sources:
       obj_path = (test_obj_dir / source.name).with_suffix(".o")
       obj_paths.append(obj_path)
 
@@ -198,7 +208,7 @@ def plan_test(
    # Absolute, because the link runs from the output bin directory while the
    # script is written relative to the test that owns it.
    script_flags: tuple[str, ...] = (
-      ("-T", str(test.linker_script)) if test.linker_script else ()
+      ("-T", str(linker_script)) if linker_script else ()
    )
 
    link_args: tuple[str, ...] = (
@@ -219,7 +229,7 @@ def plan_test(
    # and left every test that uses it stale behind a green run.
    link_action = LinkTestAction(
       test_name=test.name,
-      inputs=(*obj_paths, archive, *((test.linker_script,) if test.linker_script else ())),
+      inputs=(*obj_paths, archive, *((linker_script,) if linker_script else ())),
       output=binary,
       arguments=link_args,
       working_directory=bin_dir,
@@ -237,13 +247,13 @@ def plan_test(
    return [*compile_actions, link_action, run_action]
 
 
-def _check_no_basename_collisions(test: TestCase) -> None:
+def _check_no_basename_collisions(test_name: str, sources: tuple[Path, ...]) -> None:
    seen: dict[str, Path] = {}
-   for source in test.sources:
+   for source in sources:
       key = source.name
       if key in seen:
          raise ValueError(
-            f"Test '{test.name}' has two source files with the same name "
+            f"Test '{test_name}' has two source files with the same name "
             f"'{key}':\n  {seen[key]}\n  {source}\n"
             f"Object file names are derived from the basename, so these would "
             f"collide. Rename one of the files."

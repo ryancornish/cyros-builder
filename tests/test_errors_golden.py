@@ -173,6 +173,30 @@ def _toolchain_extends_cycle(root):
    return lambda: plan_build(_resolve(root))
 
 
+def _toolchain_board_on_a_hosted_toolchain(root):
+   # A board would put a reset handler into every gtest binary.
+   p = root / "build/toolchains/child.toml"
+   p.write_text(p.read_text() + '\n[board]\nlinker_script = "../boards/mini_board/board.ld"\n')
+   return lambda: plan_build(_resolve(root))
+
+
+def _toolchain_board_file_missing(root):
+   _patch(root / "build/toolchains/board.toml",
+          '"../boards/mini_board/startup.c"', '"../boards/mini_board/gone.c"')
+   return lambda: plan_build(_resolve(root, "board"))
+
+
+def _toolchain_board_without_linker_script(root):
+   _patch(root / "build/toolchains/board.toml",
+          'linker_script = "../boards/mini_board/board.ld"\n', "")
+   return lambda: plan_build(_resolve(root, "board"))
+
+
+def _toolchain_board_unknown_key(root):
+   _patch(root / "build/toolchains/board.toml", "[board]\n", '[board]\nstartup = "x.c"\n')
+   return lambda: plan_build(_resolve(root, "board"))
+
+
 def _profile_missing_table(root):
    p = root / "build/profiles/full.toml"
    text = p.read_text().replace('[output]\narchive = "libmini.a"\n', "")
@@ -225,6 +249,10 @@ CASES = {
    "toolchain_unknown_archive_strategy": _toolchain_unknown_archive_strategy,
    "toolchain_extends_missing": _toolchain_extends_missing,
    "toolchain_extends_cycle": _toolchain_extends_cycle,
+   "toolchain_board_on_a_hosted_toolchain": _toolchain_board_on_a_hosted_toolchain,
+   "toolchain_board_file_missing": _toolchain_board_file_missing,
+   "toolchain_board_without_linker_script": _toolchain_board_without_linker_script,
+   "toolchain_board_unknown_key": _toolchain_board_unknown_key,
    "profile_missing_table": _profile_missing_table,
    "profile_source_root_missing": _profile_source_root_missing,
    "profile_no_toolchain": _profile_no_toolchain,

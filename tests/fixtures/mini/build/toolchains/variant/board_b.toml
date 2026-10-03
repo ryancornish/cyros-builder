@@ -1,0 +1,9 @@
+# One directory below its parent on purpose. It replaces the board's sources
+# and keeps the parent's linker script, as the dual-core Cortex-M bench does,
+# and the two must resolve against different directories: its own sources
+# against variant/, the inherited script against toolchains/.
+name = "mini-board-b"
+extends = "../board.toml"
+
+[board]
+sources = ["../../boards/mini_board_b/startup_b.c"]

@@ -1,0 +1,12 @@
+# A bare-metal toolchain that supplies its machine's board files, the way the
+# Cortex-M toolchains do. See tests/test_plan_golden.py.
+name = "mini-board"
+extends = "child.toml"
+
+[settings]
+hosted = false
+
+# Resolved against THIS file, so ../boards is build/boards.
+[board]
+sources = ["../boards/mini_board/startup.c"]
+linker_script = "../boards/mini_board/board.ld"

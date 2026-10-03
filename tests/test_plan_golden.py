@@ -323,6 +323,31 @@ def test_plan_test_shape():
    assert "-lpthread" in link.arguments
 
 
+def test_a_tests_linker_script_is_a_link_input():
+   """Editing a test's linker script must relink the test.
+
+   Staleness hashes an action's INPUTS and only the argv of its arguments, and
+   the argv carries the script's path, not its content. Before 2026-10-03 the
+   script was only an argument, so an edited script relinked nothing and every
+   test using it ran stale behind a green summary. Found porting to the TM4C123,
+   where a fixed SRAM linker script kept producing the broken binary."""
+   from cyros_builder.staleness import declared_inputs
+
+   resolved = resolve_fixture("full")
+   test = next(t for t in discover_tests(resolved.profile.layout.source_root)
+               if t.name == "mini_case")
+   assert test.linker_script is not None, "the fixture must name a script for this to mean anything"
+
+   actions = plan_test(resolved=make_test_resolved(resolved, test), test=test)
+   link = next(a for a in actions if isinstance(a, LinkTestAction))
+
+   script = test.linker_script.resolve()
+   assert script in declared_inputs(link), "staleness would never see the script change"
+
+   at = link.arguments.index("-T")
+   assert link.arguments[at + 1] == str(test.linker_script), "the script must still reach the linker"
+
+
 def test_test_toml_features_replace_profile_features():
    """[components].features in a test.toml REPLACES the profile's set."""
    resolved = resolve_fixture("full")

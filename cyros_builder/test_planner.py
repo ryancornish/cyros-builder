@@ -213,9 +213,13 @@ def plan_test(
       "-o", str(binary.resolve()),
    )
 
+   # The linker script is an INPUT, not just an argument. Staleness hashes
+   # inputs and only the argv of arguments, and the argv holds the script's
+   # path, never its content, so without this an edited script relinked nothing
+   # and left every test that uses it stale behind a green run.
    link_action = LinkTestAction(
       test_name=test.name,
-      inputs=(*obj_paths, archive),
+      inputs=(*obj_paths, archive, *((test.linker_script,) if test.linker_script else ())),
       output=binary,
       arguments=link_args,
       working_directory=bin_dir,

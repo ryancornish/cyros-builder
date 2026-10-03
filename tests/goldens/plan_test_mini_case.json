@@ -32,6 +32,8 @@
       "g++",
       "-DBASE",
       "-DCHILD",
+      "-T",
+      "<FIXTURE>/tests/unit/mini_case/mini.ld",
       "<OUT>/full/mini-child/obj/mini_case.o",
       "<OUT>/full/mini-child/lib/libmini.a",
       "-lpthread",
@@ -40,7 +42,8 @@
     ],
     "inputs": [
       "<OUT>/full/mini-child/obj/mini_case.o",
-      "<OUT>/full/mini-child/lib/libmini.a"
+      "<OUT>/full/mini-child/lib/libmini.a",
+      "<FIXTURE>/tests/unit/mini_case/mini.ld"
     ],
     "output": "<OUT>/full/mini-child/bin/mini_case",
     "test_name": "mini_case",

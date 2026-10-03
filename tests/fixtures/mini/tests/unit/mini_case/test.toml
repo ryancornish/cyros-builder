@@ -13,3 +13,6 @@ features = ["alpha"]
 
 [link]
 system_libraries = ["pthread"]
+# Resolved relative to this file. Pins that a script is a link INPUT, which
+# is what makes an edit to it relink the test.
+linker_script = "mini.ld"

@@ -7,6 +7,8 @@ moved").
 """
 from __future__ import annotations
 
+import dataclasses
+
 from pathlib import Path
 
 import pytest
@@ -185,6 +187,31 @@ def test_every_compile_sees_the_exported_tree_then_the_internal_roots():
          assert includes[:1 + len(internal)] == [exported, *internal], (
             profile, action.source, includes
          )
+
+
+def _mini_case_with(*, features: tuple[str, ...]):
+   case = next(t for t in discover_tests(resolve_fixture("no_time").profile.layout.source_root)
+               if t.name == "mini_case")
+   return dataclasses.replace(case, time_driver=None, features=features)
+
+
+def test_a_test_naming_no_time_driver_gets_none():
+   """Neither the test nor the profile names a driver, and the test enables a
+   feature that does not need time. It builds with no driver at all. The
+   builder used to hand it "simulation" because it enabled ANY feature."""
+   case = _mini_case_with(features=("alpha",))
+   test_resolved = make_test_resolved(resolve_fixture("no_time"), case)
+   assert test_resolved.profile.components.time_driver is None
+   assert plan_test(resolved=test_resolved, test=case)
+
+
+def test_a_feature_needing_time_with_no_driver_named_is_refused():
+   """The case the fallback existed for. It is now an error naming the fix,
+   where it was a silent "simulation" that cannot build on a cross profile."""
+   case = _mini_case_with(features=("timed",))
+   test_resolved = make_test_resolved(resolve_fixture("no_time"), case)
+   with pytest.raises(ValueError, match="depends on 'time', but no time driver is selected"):
+      plan_test(resolved=test_resolved, test=case)
 
 
 def test_unit_test_compiles_see_the_internal_roots():

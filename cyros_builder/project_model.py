@@ -30,7 +30,6 @@ class SourceGroup:
    source_roots: tuple[Path, ...]
    sources: tuple[Path, ...]
    sources_excluded_from_archive: tuple[Path, ...]
-   generated_includes: bool
    private_includes: tuple[Path, ...]   # -I dirs applied only to this group's sources
 
 
@@ -113,7 +112,6 @@ def _load_source_group(
          meta_path=path,
          values=tomlutil.optional_str_list(raw, "sources_excluded_from_archive", path),
       ),
-      generated_includes=tomlutil.optional_bool(raw, "generated_includes", path, default=True),
       private_includes=_resolve_dirs(
          meta_path=path,
          values=tomlutil.optional_str_list(raw, "private_includes", path),
@@ -264,7 +262,6 @@ def _resolve_extends(port: Port, ports: dict[str, Port]) -> Port:
       source_roots=union("source_roots"),
       sources=union("sources"),
       sources_excluded_from_archive=union("sources_excluded_from_archive"),
-      generated_includes=port.generated_includes,
       private_includes=union("private_includes"),
       system_libraries=union("system_libraries"),
       extends=None,   # resolved

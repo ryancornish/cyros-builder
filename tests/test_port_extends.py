@@ -143,7 +143,6 @@ def _port(name: str, extends: str | None) -> Port:
       source_roots=(),
       sources=(),
       sources_excluded_from_archive=(),
-      generated_includes=True,
       private_includes=(),
       system_libraries=(),
       extends=extends,

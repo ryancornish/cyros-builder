@@ -43,7 +43,7 @@ _MANIFEST_KEYS = [
    "source_roots", "sources", "sources_excluded_from_archive",
    "private_includes", "internal_include_roots",
    "public_headers", "public_modules", "private_modules",
-   "system_libraries", "generated_includes",
+   "system_libraries",
 ]
 
 SCHEMAS: dict[str, dict[str, list[str]]] = {

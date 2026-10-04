@@ -60,7 +60,7 @@ def make_test_resolved(base: ResolvedInvocation, test: TestCase) -> ResolvedInvo
    components.port alone.
 
    Time driver: the test's locked driver if it declares one, else the
-   profile's default, else "simulation" as the agnostic fallback.
+   profile's default, else none.
 
    Features: the test's declared features REPLACE the profile's feature set
    (unit tests own their feature configuration entirely).
@@ -76,19 +76,16 @@ def make_test_resolved(base: ResolvedInvocation, test: TestCase) -> ResolvedInvo
    profile = base.profile
 
    # --- time driver ---
-   # Precedence: the test's locked driver, then the profile default. If neither
-   # is set, the test gets no time driver UNLESS it enables features (which may
-   # depend on "time"), in which case we fall back to "simulation" so the
-   # dependency resolves. Purely-kernel tests thus build with no driver at all,
-   # keeping their archive minimal.
+   # Precedence: the test's locked driver, then the profile default, then none.
+   # There is deliberately no fallback. A test whose features need time and
+   # names no driver is refused by select_project's validation, with a message
+   # saying where to set one. It used to get "simulation", silently, which is
+   # built on <thread> and fails as a wall of compile errors on a cross
+   # profile, nowhere near the cause.
    if test.time_driver is not None:
       time_driver: str | None = test.time_driver
-   elif profile.components.time_driver is not None:
-      time_driver = profile.components.time_driver
-   elif test.features:
-      time_driver = "simulation"
    else:
-      time_driver = None
+      time_driver = profile.components.time_driver
 
    new_components = dataclasses.replace(profile.components, time_driver=time_driver)
    profile = dataclasses.replace(profile, components=new_components)

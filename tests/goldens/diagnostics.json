@@ -20,6 +20,7 @@
   "toolchain_board_without_linker_script": "ValueError: <FIXTURE>/build/toolchains/board.toml: [board] has no linker_script, here or in any toolchain it extends. A board without one would link its tests for the linker's default memory map, which is no machine's.",
   "toolchain_extends_cycle": "ValueError: Toolchain inheritance cycle detected: <FIXTURE>/build/toolchains/child.toml -> <FIXTURE>/build/toolchains/base.toml -> <FIXTURE>/build/toolchains/child.toml",
   "toolchain_extends_missing": "FileNotFoundError: <FIXTURE>/build/toolchains/child.toml: extends target not found: <FIXTURE>/build/toolchains/ghost.toml\n  (resolved from extends = 'ghost.toml')",
+  "toolchain_provides_not_a_list": "ValueError: <FIXTURE>/build/toolchains/base.toml: expected '[settings].provides' to be a list of strings",
   "toolchain_unknown_archive_strategy": "ValueError: <FIXTURE>/build/toolchains/base.toml: unknown [archive].strategy 'zip'. Known: lto_merged, simple",
   "toolchain_unknown_flag_key": "ValueError: <FIXTURE>/build/toolchains/base.toml: unknown keys in [flags]: cxxx",
   "toolchain_unknown_top_level_key": "ValueError: <FIXTURE>/build/toolchains/base.toml: unknown top-level keys: mystery",

@@ -47,6 +47,19 @@ class ToolchainSettings:
    # naming them again whenever a port is added. The real predicate is not
    # which port, it is whether there is an OS underneath.
    hosted: bool = True
+   # Hardware facts about the target that a test may need and a toolchain may
+   # lack, matched against a test's `requires`. The same shape as `hosted`
+   # (the toolchain says what it targets, the test says what it needs) for
+   # facts that are not about an OS. Cyros's first is "fpu": a hard-float
+   # toolchain provides it, and a soft-float one for a part with no FPU does
+   # not, so the test that proves FP state survives a switch is skipped there
+   # rather than failing to build. Empty by default, so a toolchain that says
+   # nothing provides nothing, and a test that requires nothing runs anywhere.
+   #
+   # The builder attaches no meaning to the names. A child toolchain's list
+   # REPLACES its parent's, which is how a soft-float child of a hard-float
+   # parent drops "fpu".
+   provides: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -299,6 +312,7 @@ def _build_toolchain(path: Path, data: dict, extends_path: Path | None) -> Toolc
       optimization=tomlutil.require_str(settings, "optimization", path),
       warnings_as_errors=tomlutil.require_bool(settings, "warnings_as_errors", path),
       hosted=tomlutil.optional_bool(settings, "hosted", path, default=True),
+      provides=tuple(tomlutil.optional_str_list(settings, "provides", path)),
    )
 
    board = _build_board(data.get("board"), toolchain_settings, path)
@@ -379,7 +393,7 @@ _ALLOWED_FLAG_KEYS = {
    "asm",    "asm_add",    "asm_remove",
    "link",   "link_add",   "link_remove",
 }
-_ALLOWED_SETTINGS_KEYS = {"family", "debug", "optimization", "warnings_as_errors", "hosted"}
+_ALLOWED_SETTINGS_KEYS = {"family", "debug", "optimization", "warnings_as_errors", "hosted", "provides"}
 _ALLOWED_ARCHIVE_KEYS  = {
    "strategy", "localize_hidden", "preserve_lto_sections",
 }
@@ -432,6 +446,11 @@ def _validate_settings_table(data: dict, path: Path) -> None:
    unknown = set(data) - _ALLOWED_SETTINGS_KEYS
    if unknown:
       raise ValueError(f"{path}: unknown keys in [settings]: {', '.join(sorted(unknown))}")
+
+   # Checked here, per file, so a bad list is blamed on the file that wrote it.
+   # After the merge it would carry the leaf's path.
+   if "provides" in data:
+      _ensure_str_list(data["provides"], "[settings].provides", path)
 
 
 def _validate_runner_table(data: dict, path: Path) -> None:

@@ -95,6 +95,7 @@ def run_all_tests(
       skip_reason = _skip_reason(
          test, active_port=active_port, kinds=kinds,
          hosted_toolchain=resolved.toolchain.settings.hosted,
+         provided=resolved.toolchain.settings.provides,
       )
       if skip_reason is not None:
          skipped_results.append(TestResult(
@@ -225,6 +226,7 @@ def _blocking_layer(test: TestCase, failed_layers: set[int]) -> int | None:
 
 def _skip_reason(
    test, *, active_port: str, kinds: tuple[str, ...], hosted_toolchain: bool = True,
+   provided: tuple[str, ...] = (),
 ) -> str | None:
    """
    Return a human-readable reason to skip this test, or None to run it.
@@ -240,12 +242,20 @@ def _skip_reason(
    because the answer would be "every port that happens to run on Linux", which
    has to be rewritten each time a port is added. So the toolchain says whether
    it targets a hosted environment and the test says whether it needs one.
+
+   Required capabilities are the same idea for facts other than an OS: the
+   test names what it needs, the toolchain names what it provides, and every
+   name the test needs must be there. Decided here, before the build, so a test
+   that cannot even compile for this toolchain is never compiled.
    """
    if test.hosted and not hosted_toolchain:
       return "needs a hosted toolchain, this one is freestanding"
    if test.port_filter and active_port not in test.port_filter:
       want = ", ".join(test.port_filter)
       return f"locked to port {want}, active port is {active_port}"
+   missing = [name for name in test.requires if name not in provided]
+   if missing:
+      return f"needs {', '.join(missing)}, which this toolchain does not provide"
    if test.kind not in kinds:
       return f"kind {test.kind}, not in this run (--kind {test.kind} to include it)"
    return None

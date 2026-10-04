@@ -18,7 +18,7 @@ from conftest import FIXTURE_ROOT
 from cyros_builder.consumer_model import (
    discover_consumers, find_consumer_root, load_consumer,
 )
-from cyros_builder.test_runner import _build_consumer, _blocking_layer
+from cyros_builder.test_runner import _build_consumer, _blocking_layer, _skip_reason
 
 CONSUMER = FIXTURE_ROOT / "tests" / "consumer" / "mini_consumer" / "consumer.toml"
 
@@ -79,9 +79,21 @@ def test_a_consumer_exposes_what_the_layered_runner_reads():
    """The runner orders and blocks both kinds through the same code, so it must
    be able to read the same attributes off either without knowing which it has."""
    c = discover_consumers(FIXTURE_ROOT / "src")[0]
-   for attr in ("name", "layer", "kind", "harness_debt", "run_rank", "port_filter"):
+   for attr in ("name", "layer", "kind", "harness_debt", "run_rank", "port_filter",
+                "hosted", "requires"):
       assert hasattr(c, attr), attr
    assert c.run_rank == c.layer
+
+
+def test_a_consumer_passes_through_every_skip_filter():
+   """The list above is kept by hand, and a hand-kept list is how `requires`
+   first shipped without a consumer counterpart: every hosted suite died with
+   an AttributeError while the bare-metal ones, which skip consumers as hosted
+   before reaching the new check, stayed green. Running a real consumer through
+   the real filter covers whatever the filter reads next."""
+   c = discover_consumers(FIXTURE_ROOT / "src")[0]
+   assert _skip_reason(c, active_port="porta", kinds=("unit", "integration"),
+                       hosted_toolchain=True, provided=()) is None
 
 
 def test_a_consumer_is_blocked_by_a_lower_failure_like_anything_else():

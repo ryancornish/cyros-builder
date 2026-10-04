@@ -172,10 +172,11 @@ from cyros_builder.test_runner import _skip_reason
 
 
 class _Case:
-   def __init__(self, *, hosted=True, port_filter=(), kind="unit"):
+   def __init__(self, *, hosted=True, port_filter=(), kind="unit", requires=()):
       self.hosted = hosted
       self.port_filter = port_filter
       self.kind = kind
+      self.requires = requires
 
 
 KINDS = ("unit", "integration")
@@ -220,6 +221,95 @@ def test_hosted_can_be_declared_false(tmp_path: Path):
    path.write_text(path.read_text().replace(
       "warnings_as_errors = false", "warnings_as_errors = false\nhosted = false"))
    assert resolve_toolchain(path).settings.hosted is False
+
+
+# ---------------------------------------------------------------------------
+# Capabilities: a test's `requires` against a toolchain's `provides`
+#
+# For hardware facts that are not about an OS. Cyros's case: the test proving
+# FP state survives a context switch cannot even compile for a soft-float
+# Cortex-M3, so the toolchain for that part must be able to say it has no FPU.
+# ---------------------------------------------------------------------------
+
+def test_a_test_runs_when_the_toolchain_provides_what_it_requires():
+   assert _skip_reason(
+      _Case(hosted=False, requires=("fpu",)),
+      active_port="cortex_m", kinds=KINDS, hosted_toolchain=False, provided=("fpu",),
+   ) is None
+
+
+def test_a_test_is_skipped_when_the_toolchain_lacks_what_it_requires():
+   reason = _skip_reason(
+      _Case(hosted=False, requires=("fpu",)),
+      active_port="cortex_m", kinds=KINDS, hosted_toolchain=False, provided=(),
+   )
+   assert reason == "needs fpu, which this toolchain does not provide"
+
+
+def test_every_requirement_must_be_provided_and_the_reason_names_only_the_missing():
+   reason = _skip_reason(
+      _Case(requires=("fpu", "mve", "dsp")),
+      active_port="p", kinds=KINDS, provided=("fpu",),
+   )
+   assert reason == "needs mve, dsp, which this toolchain does not provide"
+
+
+def test_a_test_requiring_nothing_runs_whatever_the_toolchain_provides():
+   assert _skip_reason(_Case(), active_port="p", kinds=KINDS, provided=()) is None
+   assert _skip_reason(_Case(), active_port="p", kinds=KINDS, provided=("fpu",)) is None
+
+
+def test_provides_defaults_to_nothing(tmp_path: Path):
+   assert resolve_toolchain(write_toolchain(tmp_path, "")).settings.provides == ()
+
+
+def test_provides_can_be_declared(tmp_path: Path):
+   path = write_toolchain(tmp_path, "")
+   path.write_text(path.read_text().replace(
+      "warnings_as_errors = false", 'warnings_as_errors = false\nprovides = ["fpu", "dsp"]'))
+   assert resolve_toolchain(path).settings.provides == ("fpu", "dsp")
+
+
+def test_a_child_toolchain_can_drop_what_its_parent_provides(tmp_path: Path):
+   """The soft-float Cortex-M3 toolchain extends a hard-float one. A list under
+   [settings] REPLACES the parent's, so an empty one removes "fpu"."""
+   parent = write_toolchain(tmp_path, "")
+   parent.write_text(parent.read_text().replace(
+      "warnings_as_errors = false", 'warnings_as_errors = false\nprovides = ["fpu"]'))
+   child = tmp_path / "child.toml"
+   child.write_text('name = "child"\nextends = "tc.toml"\n\n[settings]\nprovides = []\n')
+   assert resolve_toolchain(parent).settings.provides == ("fpu",)
+   assert resolve_toolchain(child).settings.provides == ()
+
+
+def test_provides_must_be_a_list_of_strings(tmp_path: Path):
+   path = write_toolchain(tmp_path, "")
+   path.write_text(path.read_text().replace(
+      "warnings_as_errors = false", 'warnings_as_errors = false\nprovides = "fpu"'))
+   with pytest.raises(ValueError, match="provides' to be a list of strings"):
+      resolve_toolchain(path)
+
+
+def test_the_fixture_wires_capabilities_end_to_end():
+   """Real files rather than stubs: the fixture's base toolchain provides
+   "threads", its bare-metal board toolchain extends it and drops the list, and
+   mini_case requires it. Pins the loader on both sides and the replacement
+   through a real `extends` chain."""
+   from conftest import FIXTURE_ROOT
+   from cyros_builder.test_model import load_test_case
+
+   toolchains = FIXTURE_ROOT / "build" / "toolchains"
+   child = resolve_toolchain(toolchains / "child.toml")
+   board = resolve_toolchain(toolchains / "board.toml")
+   case = load_test_case(FIXTURE_ROOT / "tests" / "unit" / "mini_case" / "test.toml")
+
+   assert case.requires == ("threads",)
+   assert child.settings.provides == ("threads",)
+   assert board.settings.provides == ()
+   assert _skip_reason(case, active_port="porta", kinds=KINDS,
+                       provided=child.settings.provides) is None
+   assert "needs threads" in _skip_reason(case, active_port="porta", kinds=KINDS,
+                                          provided=board.settings.provides)
 
 
 # ---------------------------------------------------------------------------

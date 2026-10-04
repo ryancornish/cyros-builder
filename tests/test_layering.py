@@ -10,6 +10,7 @@ under test is the scheduling and reporting logic, not the compiler.
 """
 from __future__ import annotations
 
+import dataclasses
 from pathlib import Path
 
 import pytest
@@ -130,8 +131,9 @@ class _Resolved:
       class settings:
          # These layering tests are all about ordering and blocking, so they
          # model a host toolchain and every case is hosted. The freestanding
-         # path is covered in test_runner_command.py.
+         # path is covered in test_runner_command.py, and so are capabilities.
          hosted = True
+         provides = ()
 
 
 def test_a_failure_blocks_higher_layers_and_they_are_not_run(stub_runner):
@@ -224,6 +226,41 @@ def test_soaks_and_measurements_are_skipped_unless_asked_for(stub_runner):
    assert ran2 == ["s"]
 
 
+class _ResolvedWithFpu(_Resolved):
+   class toolchain:
+      class settings:
+         hosted = True
+         provides = ("fpu",)
+
+
+def test_the_runner_checks_requires_against_the_toolchains_provides(stub_runner, monkeypatch):
+   """The filter is only as good as the wiring that hands it the toolchain's
+   list. A skipped test must also never be BUILT: cyros's FPU test does not
+   compile for a soft-float toolchain, so a skip decided after the build would
+   still report it as a build failure."""
+   needs_fpu = dataclasses.replace(make_case("needs_fpu", 1), requires=("fpu",))
+   cases = [make_case("plain", 1), needs_fpu]
+
+   ran = stub_runner({})
+   built: list[str] = []
+   stub_build = test_runner._build_one
+
+   def recording_build(**kwargs):
+      built.append(kwargs["test"].name)
+      return stub_build(**kwargs)
+
+   monkeypatch.setattr(test_runner, "_build_one", recording_build)
+   by_name = {r.name: r for r in run_all_tests(resolved=_Resolved(), tests=cases)}
+   assert by_name["needs_fpu"].skipped
+   assert by_name["needs_fpu"].skip_reason == "needs fpu, which this toolchain does not provide"
+   assert built == ["plain"] and ran == ["plain"]
+
+   ran = stub_runner({})
+   by_name = {r.name: r for r in run_all_tests(resolved=_ResolvedWithFpu(), tests=cases)}
+   assert not by_name["needs_fpu"].skipped
+   assert sorted(ran) == ["needs_fpu", "plain"]
+
+
 # ---------------------------------------------------------------------------
 # Declaration, which is enforcement tier 1
 # ---------------------------------------------------------------------------
@@ -288,6 +325,13 @@ def test_harness_debt_must_point_upward(mini_copy):
    path = mini_copy(mini_copy.original.replace(
       "layer  = 1", 'layer  = 4\nharness_debt = { layer = 2, reason = "backwards" }'))
    with pytest.raises(ValueError, match="must be ABOVE"):
+      load_test_case(path)
+
+
+def test_requires_must_be_a_list_of_strings(mini_copy):
+   path = mini_copy(mini_copy.original.replace(
+      'requires = ["threads"]', 'requires = "threads"'))
+   with pytest.raises(ValueError, match="'requires' to be a list of strings"):
       load_test_case(path)
 
 

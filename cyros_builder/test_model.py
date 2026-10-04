@@ -97,6 +97,10 @@ class TestCase:
    # had to be edited when the first freestanding toolchain arrived. A test
    # that runs on bare metal sets `hosted = false`.
    hosted: bool = True
+   # What the test needs the toolchain to provide ([settings].provides), every
+   # name of it, or the test is skipped. Empty by default, so only a test that
+   # depends on a hardware fact has to say so.
+   requires: tuple[str, ...] = ()
 
    @property
    def run_rank(self) -> int:
@@ -305,6 +309,7 @@ def load_test_case(path: Path) -> TestCase:
       )
 
    hosted = tomlutil.optional_bool(test_raw, "hosted", toml_path, default=True)
+   requires = tuple(tomlutil.optional_str_list(test_raw, "requires", toml_path))
 
    layer = _require_layer(test_raw, toml_path)
    kind = _require_kind(test_raw, toml_path)
@@ -323,6 +328,7 @@ def load_test_case(path: Path) -> TestCase:
       extra_link_flags=extra_link_flags,
       linker_script=linker_script,
       hosted=hosted,
+      requires=requires,
       port_filter=port_filter,
       time_driver=time_driver,
       features=features,

@@ -5,6 +5,8 @@ extends = "child.toml"
 
 [settings]
 hosted = false
+# Replaces the inherited ["threads"]: a list under [settings] is not merged.
+provides = []
 
 # Resolved against THIS file, so ../boards is build/boards.
 [board]

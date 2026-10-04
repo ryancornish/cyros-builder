@@ -3,6 +3,8 @@ name   = "mini_case"
 layer  = 1
 source = "mini_case.cpp"
 config = "../../../build/configs/mini.hpp"
+# Skipped unless the toolchain's [settings].provides names it.
+requires = ["threads"]
 
 [components]
 # port here is a FILTER: the test is skipped unless the profile selects one of

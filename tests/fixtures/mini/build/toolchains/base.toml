@@ -18,6 +18,8 @@ family = "gcc"
 debug = false
 optimization = "O1"
 warnings_as_errors = true
+# A capability a test may require. board.toml, two extends below, drops it.
+provides = ["threads"]
 
 [archive]
 strategy = "simple"

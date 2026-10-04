@@ -197,6 +197,12 @@ def _toolchain_board_unknown_key(root):
    return lambda: plan_build(_resolve(root, "board"))
 
 
+def _toolchain_provides_not_a_list(root):
+   # A bare string would otherwise read as a list of its characters.
+   _patch(root / "build/toolchains/base.toml", 'provides = ["threads"]', 'provides = "threads"')
+   return lambda: plan_build(_resolve(root))
+
+
 def _profile_missing_table(root):
    p = root / "build/profiles/full.toml"
    text = p.read_text().replace('[output]\narchive = "libmini.a"\n', "")
@@ -253,6 +259,7 @@ CASES = {
    "toolchain_board_file_missing": _toolchain_board_file_missing,
    "toolchain_board_without_linker_script": _toolchain_board_without_linker_script,
    "toolchain_board_unknown_key": _toolchain_board_unknown_key,
+   "toolchain_provides_not_a_list": _toolchain_provides_not_a_list,
    "profile_missing_table": _profile_missing_table,
    "profile_source_root_missing": _profile_source_root_missing,
    "profile_no_toolchain": _profile_no_toolchain,

@@ -35,8 +35,8 @@ class ConsumerCase:
 
    Deliberately exposes the same attributes the layered runner reads off a
    TestCase (`name`, `layer`, `kind`, `harness_debt`, `run_rank`,
-   `port_filter`, `hosted`), so the runner orders and blocks both kinds the
-   same way without knowing which it is holding.
+   `port_filter`, `hosted`, `requires`), so the runner orders, filters and
+   blocks both kinds the same way without knowing which it is holding.
    """
    path: Path                    # directory containing consumer.toml
    name: str
@@ -54,6 +54,13 @@ class ConsumerCase:
       can never run one. Cross-compiling a consumer would mean teaching the
       builder to link an application, which is its own piece of work."""
       return True
+
+   @property
+   def requires(self) -> tuple[str, ...]:
+      """Nothing. A capability is a fact about the target a toolchain builds
+      for, and a consumer is built by its own script for the host, never by
+      the profile's toolchain, so there is nothing for it to require."""
+      return ()
 
    @property
    def run_rank(self) -> int:

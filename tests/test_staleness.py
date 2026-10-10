@@ -70,7 +70,7 @@ def build(resolved, *, force=False):
    actions = plan_build(resolved)
    pruned = prune_actions(resolved, actions, force=force)
    execute_actions(pruned.actions)
-   record_state(resolved, actions, pruned.actions)
+   record_state(resolved, actions, pruned.actions, pruned.before)
    return actions, pruned
 
 
@@ -345,6 +345,77 @@ def test_reverting_an_edit_returns_to_a_no_op(repo, tmp_path):
 
    _, again = build(resolved)
    assert again.actions == []
+
+
+def edited_while_it_builds(resolved, path: Path, during: str, after: str):
+   """One build in which `path` holds `during` when the actions run and
+   `after` by the time the state is recorded: an edit saved while the build
+   is under way, after the compiler read the file."""
+   path.write_text(during)
+   populate_include_tree(resolved)
+   actions = plan_build(resolved)
+   pruned = prune_actions(resolved, actions)
+   execute_actions(pruned.actions)
+   path.write_text(after)
+   record_state(resolved, actions, pruned.actions, pruned.before)
+
+
+@needs_gcc
+def test_a_source_edited_while_it_compiles_is_rebuilt_next_time(repo, tmp_path):
+   """The bug this exists for, found 2026-10-10 in ~/cyros: a test source
+   saved one second into a suite's build was compiled from the old bytes and
+   recorded with the new hash, so every later build skipped the stale object,
+   a touch included, until --force. The state must describe what the compile
+   could have read, not what the file held once the build was over."""
+   resolved = resolve(repo, tmp_path / "out")
+   build(resolved)
+
+   target = repo / "src" / "time" / "tick" / "tick.cpp"
+   original = target.read_text()
+   edited_while_it_builds(resolved, target,
+                          during=original.replace("return 0u;", "return 7u;"),
+                          after=original.replace("return 0u;", "return 9u;"))
+
+   _, pruned = build(resolved)
+   assert "tick.o" in names(pruned.actions), names(pruned.actions)
+
+   _, again = build(resolved)
+   assert again.actions == [], "and once rebuilt, the next build is a no-op"
+
+
+@needs_gcc
+def test_a_header_edited_while_its_includer_compiles_is_rebuilt_next_time(repo, tmp_path):
+   """The same race through a header the previous .d already named, which is
+   the case the pre-build snapshot covers. An internal header, because the
+   compile reads it in place: a public one is read from the include tree's
+   copy, which nothing rewrites mid-build."""
+   resolved = resolve(repo, tmp_path / "out")
+   build(resolved)
+
+   header = repo / "src" / "port" / "internal_headers" / "mini" / "port_internal.hpp"
+   original = header.read_text()
+   edited_while_it_builds(resolved, header,
+                          during=original.replace("= 7;", "= 8;"),
+                          after=original.replace("= 7;", "= 9;"))
+
+   _, pruned = build(resolved)
+   assert "portb.o" in names(pruned.actions), names(pruned.actions)
+
+
+@needs_gcc
+def test_a_build_that_changes_nothing_mid_run_still_settles(repo, tmp_path):
+   """The snapshot leaves out what the plan produces. Objects and the archive
+   change on every build that runs them, so recording their pre-build hashes
+   would leave each consumer stale forever."""
+   resolved = resolve(repo, tmp_path / "out")
+   target = repo / "src" / "time" / "tick" / "tick.cpp"
+   build(resolved)
+   target.write_text(target.read_text().replace("return 0u;", "return 7u;"))
+
+   _, pruned = build(resolved)
+   assert names(pruned.actions) == ["libmini.a", "tick.o"]
+   _, again = build(resolved)
+   assert again.actions == [], f"still rebuilding {names(again.actions)}"
 
 
 @needs_gcc

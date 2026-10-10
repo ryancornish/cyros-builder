@@ -371,11 +371,15 @@ def _build_one(
 
    # One state file per build root, so it must be written from the combined
    # plan. Recording each round separately would drop the other's entries.
+   # Where both rounds hashed an input, the archive round's earlier hash wins:
+   # recording older content can only cost a rebuild, newer can hide a stale
+   # object (record_state).
    try:
       record_state(
          test_resolved,
          archive_actions + build_actions,
          pruned_archive.actions + pruned_test.actions,
+         {**pruned_test.before, **pruned_archive.before},
       )
    except Exception as exc:
       return False, f"Failed to record build state: {exc}", time.monotonic() - start, None

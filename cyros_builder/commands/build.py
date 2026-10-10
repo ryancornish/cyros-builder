@@ -74,7 +74,7 @@ class BuildCommand(Command):
          # Only after a clean run: see record_state's docstring for why a failed
          # build deliberately records nothing.
          with step("Build succeeded, but failed to record build state"):
-            record_state(resolved, actions, pruned.actions)
+            record_state(resolved, actions, pruned.actions, pruned.before)
 
       with step("Build succeeded, but failed to write manifest"):
          manifest = build_manifest(resolved)

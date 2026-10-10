@@ -24,7 +24,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from cyros_builder.actions import (
@@ -51,6 +52,8 @@ class PruneResult:
    actions: list          # what to execute, in plan order
    skipped: int           # how many were up to date
    total: int
+   # The content of their inputs before any of them ran, for record_state.
+   before: dict[str, str] = field(default_factory=dict)
 
    @property
    def all_up_to_date(self) -> bool:
@@ -206,10 +209,13 @@ def prune_actions(
    *,
    force: bool = False,
 ) -> PruneResult:
-   """Return the subset of `actions` that must run, in plan order."""
+   """Return the subset of `actions` that must run, in plan order, with the
+   content of their inputs as it is now, before they run (`before`)."""
    total = len(actions)
+   produced = _produced(actions)
    if force:
-      return PruneResult(actions=list(actions), skipped=0, total=total)
+      return PruneResult(actions=list(actions), skipped=0, total=total,
+                         before=_snapshot_sources(actions, produced))
 
    state = load_state(resolved)
    rebuilt_outputs: set[Path] = set()
@@ -226,7 +232,33 @@ def prune_actions(
          keep.append(action)
          rebuilt_outputs.add(output)
 
-   return PruneResult(actions=keep, skipped=total - len(keep), total=total)
+   return PruneResult(actions=keep, skipped=total - len(keep), total=total,
+                      before=_snapshot_sources(keep, produced))
+
+
+def _produced(actions: list) -> set[Path]:
+   return {a.output.resolve() for a in actions if getattr(a, "output", None) is not None}
+
+
+def _snapshot_sources(actions: list, produced: set[Path]) -> dict[str, str]:
+   """Hash every input of `actions` that the plan does not itself produce: the
+   sources, and the headers each compile's existing .d names. Taken before
+   anything runs, so record_state can tell what an input held when its action
+   started from what it holds once the build is over.
+
+   Inputs the plan produces (objects, the archive) are left out, because they
+   are MEANT to change while it runs: recording their old content would make
+   every consumer stale forever. This is the only place that rule lives, since
+   record_state prefers whatever this snapshot holds."""
+   snapshot: dict[str, str] = {}
+   for action in actions:
+      for path in declared_inputs(action):
+         if path in produced or str(path) in snapshot:
+            continue
+         digest = _hash_file(path)
+         if digest is not None:
+            snapshot[str(path)] = digest
+   return snapshot
 
 
 def _is_stale(action, output: Path, state: dict, rebuilt_outputs: set[Path]) -> bool:
@@ -318,13 +350,29 @@ def discard_state(resolved: ResolvedInvocation) -> None:
       pass
 
 
-def record_state(resolved: ResolvedInvocation, actions: list, executed: list) -> None:
+def record_state(
+   resolved: ResolvedInvocation,
+   actions: list,
+   executed: list,
+   before: Mapping[str, str] | None = None,
+) -> None:
    """Persist state for the whole plan.
 
    Called only after a fully successful execute. Entries for executed actions
    are recomputed now (a compile's .d only exists *after* it ran, so its header
    set is not knowable any earlier); entries for skipped actions are carried
    forward untouched.
+
+   **A source or header is recorded as it was BEFORE the build** (`before`,
+   from prune_actions), wherever that is known. Hashing it now instead records
+   an edit made while its compile ran, which the object may not contain. That
+   happened 2026-10-10: a test source edited one second into a suite's build
+   was compiled from the old bytes and recorded with the new hash, and every
+   later build judged the stale object current, even after a touch, until
+   `--force`. Recording the earlier content is safe whichever version the
+   compiler read: if the file changed, the next build sees a mismatch and
+   rebuilds. Only a header first named by THIS compile's .d has no earlier
+   hash, and an edit to it during that same compile is still missed.
 
    On failure this is not called at all. The caller must call discard_state()
    instead: the previous state can no longer be trusted, because a failed run
@@ -334,6 +382,7 @@ def record_state(resolved: ResolvedInvocation, actions: list, executed: list) ->
    """
    previous = load_state(resolved)
    executed_ids = {id(a) for a in executed}
+   before = before or {}
    entries: dict = {}
 
    for action in actions:
@@ -350,7 +399,7 @@ def record_state(resolved: ResolvedInvocation, actions: list, executed: list) ->
       for path in declared_inputs(action):
          digest = _hash_file(path)
          if digest is not None:
-            inputs[str(path)] = digest
+            inputs[str(path)] = before.get(str(path), digest)
 
       entries[key] = {"argv": _hash_argv(action.arguments), "inputs": inputs}
 

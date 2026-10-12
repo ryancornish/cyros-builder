@@ -18,7 +18,7 @@ import dataclasses
 from pathlib import Path
 
 from cyros_builder.actions import CompileTestAction, LinkTestAction, RunTestAction
-from cyros_builder.compile_args import build_compile_args, depfile_path
+from cyros_builder.compile_args import build_compile_args, depfile_path, link_dependency_flag
 from cyros_builder.output import build_root, include_dir, lib_dir
 from cyros_builder.resolve import ResolvedInvocation
 from cyros_builder.project_model import collect_internal_include_roots, select_project
@@ -208,6 +208,12 @@ def plan_test(
       ("-T", str(linker_script)) if linker_script else ()
    )
 
+   # The dependency file lists what the linker READ, which the plan cannot know:
+   # the start files, libgcc, the standard library and the file each `-l`
+   # resolved to. Staleness hashes them, so a system library upgrade relinks.
+   # Without it, gtest 1.17 to 1.18 removed the libgtest.so.1.17.0 every host
+   # test binary named, and each one then failed with exit 127 behind an
+   # up-to-date build until --force.
    link_args: tuple[str, ...] = (
       tc.tools.cxx,
       *tc.flags.common,
@@ -217,6 +223,7 @@ def plan_test(
       *[str(obj.resolve()) for obj in obj_paths],
       str(archive.resolve()),
       *lib_flags,
+      link_dependency_flag(binary.resolve()),
       "-o", str(binary.resolve()),
    )
 

@@ -13,6 +13,20 @@ def depfile_path(output: Path) -> Path:
    return output.with_suffix(output.suffix + ".d")
 
 
+def link_dependency_flag(output: Path) -> str:
+   """The flag that makes a link write its `.d`: every file the linker read,
+   the C runtime's start files, libgcc, the standard library and each library a
+   `-l` resolved to included, in make syntax and beside the binary by the same
+   convention as a compile's.
+
+   THE one definition, for the same reason as depfile_path: the test planner
+   puts it on the link and staleness.py looks for it there, and a disagreement
+   would silently stop a system library upgrade relinking anything. GNU ld has
+   had `--dependency-file` since 2.35.
+   """
+   return f"-Wl,--dependency-file={depfile_path(output)}"
+
+
 def build_compile_args(
    tool: str,
    common_flags: tuple[str, ...],

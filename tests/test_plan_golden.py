@@ -375,6 +375,24 @@ def test_a_tests_linker_script_is_a_link_input():
    assert link.arguments[at + 1] == str(test.linker_script), "the script must still reach the linker"
 
 
+def test_a_test_link_writes_the_dependency_file_staleness_reads():
+   """A system library upgrade relinks only because the link lists what it
+   read and staleness finds that list. The planner and staleness.py share one
+   definition of the flag, and this pins that the link carries it and that
+   staleness looks for the file where the link writes it."""
+   from cyros_builder.compile_args import depfile_path, link_dependency_flag
+   from cyros_builder.staleness import depfile_for
+
+   resolved = resolve_fixture("full")
+   test = next(t for t in discover_tests(resolved.profile.layout.source_root)
+               if t.name == "mini_case")
+   actions = plan_test(resolved=make_test_resolved(resolved, test), test=test)
+   link = next(a for a in actions if isinstance(a, LinkTestAction))
+
+   assert link_dependency_flag(link.output.resolve()) in link.arguments
+   assert depfile_for(link) == depfile_path(link.output.resolve())
+
+
 def _board_plan(test_name, toolchain=None):
    resolved = resolve_fixture("board", toolchain=toolchain)
    test = next(t for t in discover_tests(resolved.profile.layout.source_root)

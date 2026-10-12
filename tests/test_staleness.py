@@ -28,8 +28,8 @@ import pytest
 
 from conftest import FIXTURE_ROOT
 
-from cyros_builder.actions import ArchiveAction, CompileAction
-from cyros_builder.compile_args import depfile_path
+from cyros_builder.actions import ArchiveAction, CompileAction, LinkTestAction
+from cyros_builder.compile_args import depfile_path, link_dependency_flag
 from cyros_builder.executor import execute_actions
 from cyros_builder.include_tree import populate_include_tree
 from cyros_builder.output import build_state_path, include_dir
@@ -668,3 +668,101 @@ def test_discard_state_is_safe_when_there_is_no_state(repo, tmp_path):
    resolved = resolve(repo, tmp_path / "out")
    discard_state(resolved)          # must not raise
    assert not build_state_path(resolved).exists()
+
+
+# ---------------------------------------------------------------------------
+# A test link's system inputs
+# ---------------------------------------------------------------------------
+
+def _system_library(directory: Path, value: int) -> Path:
+   """A static `libfake.a` whose fake() returns `value`. Removed and made anew,
+   as a package upgrade replaces a file rather than rewriting it in place."""
+   directory.mkdir(parents=True, exist_ok=True)
+   source = directory / "fake.c"
+   source.write_text(f"int fake(void) {{ return {value}; }}\n")
+   obj = directory / "fake.o"
+   subprocess.run(["gcc", "-c", str(source), "-o", str(obj)], check=True)
+   library = directory / "libfake.a"
+   library.unlink(missing_ok=True)
+   subprocess.run(["ar", "rcs", str(library), str(obj)], check=True)
+   return library
+
+
+def _test_link(tmp_path: Path) -> tuple[LinkTestAction, Path]:
+   """A test link as the planner makes one, against `-lfake` found on a `-L`
+   path the plan never names, as `-lgtest` is found in /usr/lib."""
+   library = _system_library(tmp_path / "sys", 1)
+   obj = tmp_path / "obj" / "test_fake.o"
+   obj.parent.mkdir()
+   main = tmp_path / "obj" / "test_fake.c"
+   main.write_text("int fake(void);\nint main(void) { return fake(); }\n")
+   subprocess.run(["gcc", "-c", str(main), "-o", str(obj)], check=True)
+
+   bin_dir = tmp_path / "bin"
+   bin_dir.mkdir()
+   binary = bin_dir / "test_fake"
+   link = LinkTestAction(
+      test_name="test_fake",
+      inputs=(obj,),
+      output=binary,
+      arguments=("gcc", str(obj), "-L", str(library.parent), "-lfake",
+                 link_dependency_flag(binary), "-o", str(binary)),
+      working_directory=bin_dir,
+   )
+   return link, library
+
+
+def _link_cycle(resolved, link):
+   pruned = prune_actions(resolved, [link])
+   execute_actions(pruned.actions)
+   record_state(resolved, [link], pruned.actions, pruned.before)
+   return pruned
+
+
+@needs_gcc
+def test_a_test_link_records_what_it_read_and_settles(repo, tmp_path):
+   """The link's dependency file names the library each `-l` resolved to and
+   the C runtime's start files, and a second build is a no-op. The file goes on
+   to give each of those an empty rule of its own (`crti.o:`), and read as
+   prerequisites those never hash, so every link would be stale forever."""
+   resolved = resolve(repo, tmp_path / "out")
+   link, library = _test_link(tmp_path)
+
+   assert _link_cycle(resolved, link).actions == [link]
+   read = declared_inputs(link)
+   assert library.resolve() in read, "the library -lfake resolved to is an input"
+   assert any(p.name.startswith("crt") for p in read), "so are the start files"
+
+   assert _link_cycle(resolved, link).actions == [], "nothing changed, nothing relinks"
+
+
+@needs_gcc
+def test_upgrading_a_system_library_relinks_the_tests_that_read_it(repo, tmp_path):
+   """THE BUG THIS FIXES: gtest 1.17 to 1.18 removed the libgtest.so.1.17.0
+   every host test binary named, and every one then failed with exit 127 behind
+   an up-to-date build until --force relinked them."""
+   resolved = resolve(repo, tmp_path / "out")
+   link, library = _test_link(tmp_path)
+   _link_cycle(resolved, link)
+   assert subprocess.run([str(link.output)]).returncode == 1
+
+   _system_library(library.parent, 2)
+
+   assert _link_cycle(resolved, link).actions == [link], "the upgrade must relink"
+   assert subprocess.run([str(link.output)]).returncode == 2, "against the new library"
+   assert _link_cycle(resolved, link).actions == []
+
+
+@needs_gcc
+def test_a_test_link_without_its_dependency_file_relinks(repo, tmp_path):
+   """What the link read is unknown, so it cannot be trusted. Also the upgrade
+   path: binaries linked before links wrote one relink once."""
+   resolved = resolve(repo, tmp_path / "out")
+   link, _ = _test_link(tmp_path)
+   _link_cycle(resolved, link)
+
+   depfile = depfile_path(link.output)
+   assert depfile.is_file()
+   depfile.unlink()
+
+   assert _link_cycle(resolved, link).actions == [link]

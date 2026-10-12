@@ -64,6 +64,7 @@
       "<OUT>/board/mini-board/obj/startup.o",
       "<OUT>/board/mini-board/lib/libmini.a",
       "-lpthread",
+      "-Wl,--dependency-file=<OUT>/board/mini-board/bin/mini_upper.d",
       "-o",
       "<OUT>/board/mini-board/bin/mini_upper"
     ],

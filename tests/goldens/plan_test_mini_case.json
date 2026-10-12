@@ -37,6 +37,7 @@
       "<OUT>/full/mini-child/obj/mini_case.o",
       "<OUT>/full/mini-child/lib/libmini.a",
       "-lpthread",
+      "-Wl,--dependency-file=<OUT>/full/mini-child/bin/mini_case.d",
       "-o",
       "<OUT>/full/mini-child/bin/mini_case"
     ],

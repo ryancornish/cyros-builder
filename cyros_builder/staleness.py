@@ -10,6 +10,12 @@ Staleness is decided on **content hashes, never mtimes**. Generated files and
 git checkouts both make mtimes lie, and the include tree is rewritten (or at
 least re-examined) on every run.
 
+An input is whatever the tool READ, where the tool can say: a compile's `-MMD`
+file names the headers it included (system headers deliberately not), and a
+test link's dependency file names every file the linker opened, the C runtime,
+the standard library and each `-l` included. Those system files are hashed like
+any input, but once per process (_hash_system_file).
+
 An action is stale when any of these hold:
   * its output is missing
   * it has no recorded state
@@ -24,7 +30,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -37,7 +43,7 @@ from cyros_builder.actions import (
    ObjcopyAction,
    PartialLinkAction,
 )
-from cyros_builder.compile_args import depfile_path
+from cyros_builder.compile_args import depfile_path, link_dependency_flag
 from cyros_builder.output import build_state_path
 from cyros_builder.resolve import ResolvedInvocation
 
@@ -75,6 +81,27 @@ def _hash_file(path: Path) -> str | None:
       return None
 
 
+# A test link reads the same system files as every other test link in the run:
+# about 12 MB of start files, libraries and libstdc++ on a host test, 39 ms to
+# hash on the Arch box, so about 3 s a warm suite if each link hashed them
+# again. Content still decides. A file is rehashed whenever anything stat
+# reports about it differs, and a package upgrade replaces the file, so the key
+# changes with it. Only files the plan does not name are hashed here: sources,
+# headers, objects and scripts keep the plain _hash_file.
+_system_digests: dict[tuple, str | None] = {}
+
+
+def _hash_system_file(path: Path) -> str | None:
+   try:
+      st = path.stat()
+   except OSError:
+      return None
+   key = (str(path), st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns)
+   if key not in _system_digests:
+      _system_digests[key] = _hash_file(path)
+   return _system_digests[key]
+
+
 def _hash_argv(arguments: tuple[str, ...]) -> str:
    return hashlib.sha256("\0".join(arguments).encode()).hexdigest()
 
@@ -84,7 +111,8 @@ def _hash_argv(arguments: tuple[str, ...]) -> str:
 # ---------------------------------------------------------------------------
 
 def depfile_for(action) -> Path | None:
-   """Path of the `-MMD -MF` dependency file a compile writes, if it has one.
+   """Path of the dependency file an action writes, if it has one: a compile's
+   `-MMD -MF`, or a test link's `--dependency-file`.
 
    Assembly compiles are planned without `-MMD`, so no .d is produced for them
    and none is expected here — the check is whether the argv actually asked for
@@ -92,6 +120,9 @@ def depfile_for(action) -> Path | None:
    """
    if isinstance(action, _COMPILES) and "-MMD" in action.arguments:
       return depfile_path(action.output)
+   if (isinstance(action, LinkTestAction)
+         and link_dependency_flag(action.output.resolve()) in action.arguments):
+      return depfile_path(action.output.resolve())
    return None
 
 
@@ -101,17 +132,23 @@ def _parse_depfile(path: Path) -> list[Path]:
    Format is `target: prereq prereq \\\n  prereq ...`. Only the prerequisites
    matter. Escaped spaces are handled; anything else exotic is not, because gcc
    does not emit it for the paths this builder generates.
+
+   Only the FIRST rule is read. A link's file goes on to give every
+   prerequisite an empty rule of its own (`/usr/lib/crti.o:`), as gcc's `-MP`
+   would, and read as prerequisites those would be paths ending in a colon,
+   which never hash, so every link would be stale forever.
    """
    try:
       text = path.read_text()
    except OSError:
       return []
 
-   _, _, rhs = text.partition(":")
+   text = text.replace("\\\r\n", " ").replace("\\\n", " ")
+   first_rule = next((line for line in text.splitlines() if line.strip()), "")
+   _, _, rhs = first_rule.partition(":")
    if not rhs:
       return []
 
-   rhs = rhs.replace("\\\n", " ").replace("\\\r\n", " ")
    parts: list[str] = []
    current = ""
    index = 0
@@ -139,8 +176,38 @@ def declared_inputs(action) -> list[Path]:
 
    For a compile that has already run once, this includes the header set gcc
    recorded in the .d file — which is the only way header edits can invalidate
-   an object.
+   an object. For a test link that has run once, it includes every system file
+   the linker read (_link_reads).
    """
+   return [path for path, _ in _inputs(action)]
+
+
+def _inputs(action) -> list[tuple[Path, Callable[[Path], str | None]]]:
+   """declared_inputs, each with the function that hashes it."""
+   return ([(path, _hash_file) for path in _named_inputs(action)]
+           + [(path, _hash_system_file) for path in _link_reads(action)])
+
+
+def _link_reads(action) -> list[Path]:
+   """What a test link read that the plan does not name itself, from the
+   dependency file it wrote: the start files, libgcc, the standard library and
+   the file each `-l` resolved to. Empty before the first link."""
+   depfile = depfile_for(action) if isinstance(action, LinkTestAction) else None
+   if depfile is None:
+      return []
+   named = set(_named_inputs(action))
+   reads: list[Path] = []
+   for path in _parse_depfile(depfile):
+      if not path.is_absolute():
+         path = action.working_directory / path
+      resolved = path.resolve()
+      if resolved not in named and resolved not in reads:
+         reads.append(resolved)
+   return reads
+
+
+def _named_inputs(action) -> list[Path]:
+   """The inputs the plan itself names, and a compile's headers."""
    if isinstance(action, _COMPILES):
       inputs = [action.source]
       depfile = depfile_for(action)
@@ -166,8 +233,10 @@ def declared_inputs(action) -> list[Path]:
 
 
 def _first_run_unknown_deps(action) -> bool:
-   """True when a compile has never produced a .d, so its header set is unknown
-   and it must be treated as stale regardless of what state says."""
+   """True when a compile or a test link has never produced its .d, so what it
+   read is unknown and it must be treated as stale regardless of what state
+   says. For a link that is also the upgrade path: a binary from before links
+   wrote one relinks once."""
    depfile = depfile_for(action)
    return depfile is not None and not depfile.is_file()
 
@@ -252,10 +321,10 @@ def _snapshot_sources(actions: list, produced: set[Path]) -> dict[str, str]:
    record_state prefers whatever this snapshot holds."""
    snapshot: dict[str, str] = {}
    for action in actions:
-      for path in declared_inputs(action):
+      for path, digest_of in _inputs(action):
          if path in produced or str(path) in snapshot:
             continue
-         digest = _hash_file(path)
+         digest = digest_of(path)
          if digest is not None:
             snapshot[str(path)] = digest
    return snapshot
@@ -277,14 +346,14 @@ def _is_stale(action, output: Path, state: dict, rebuilt_outputs: set[Path]) -> 
    if not isinstance(recorded_inputs, dict):
       return True
 
-   current = declared_inputs(action)
+   current = _inputs(action)
 
    # An input produced by an action already deemed stale in this same plan.
    # This is the load-bearing one for the archive: at prune time the object on
    # disk is still the old one, so its hash would match and the archive would be
    # wrongly skipped. Only knowing that a member is *about to* be rebuilt saves
    # it.
-   if any(path in rebuilt_outputs for path in current):
+   if any(path in rebuilt_outputs for path, _ in current):
       return True
 
    # Appeared or disappeared. For archive-like actions this is exactly the
@@ -301,13 +370,16 @@ def _is_stale(action, output: Path, state: dict, rebuilt_outputs: set[Path]) -> 
    # strategy enumerates members in argv (an `ar @filelist` variant would not),
    # and the .d check stops mattering only while the recorded input set always
    # includes the headers. Disabling either alone leaves the suite green;
-   # disabling both makes test_object_without_a_depfile_is_rebuilt fail. Do not
-   # delete one as "dead code" without re-reading that reasoning.
-   if {str(p) for p in current} != set(recorded_inputs):
+   # disabling both makes test_object_without_a_depfile_is_rebuilt fail. A test
+   # link's .d pairs with this check the same way (what it read is in the
+   # recorded set), and disabling both for links fails
+   # test_a_test_link_without_its_dependency_file_relinks. Do not delete one as
+   # "dead code" without re-reading that reasoning.
+   if {str(p) for p, _ in current} != set(recorded_inputs):
       return True
 
-   for path in current:
-      digest = _hash_file(path)
+   for path, digest_of in current:
+      digest = digest_of(path)
       if digest is None or digest != recorded_inputs.get(str(path)):
          return True
 
@@ -396,8 +468,8 @@ def record_state(
          continue
 
       inputs: dict[str, str] = {}
-      for path in declared_inputs(action):
-         digest = _hash_file(path)
+      for path, digest_of in _inputs(action):
+         digest = digest_of(path)
          if digest is not None:
             inputs[str(path)] = before.get(str(path), digest)
 

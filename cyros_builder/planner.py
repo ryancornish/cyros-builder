@@ -165,8 +165,13 @@ def _plan_lto_merged_archive(
 
    actions: list = []
 
+   # The merge is where LTO generates the code, so it needs the flags that pick
+   # the target. A cross toolchain carries them in common (-mcpu, -mthumb,
+   # -mfpu): without them arm-none-eabi assembles the merged object for its
+   # default Arm core, and the port's FPU instructions do not assemble at all.
    merge_args = (
       tc.tools.cxx,
+      *tc.flags.common,
       "-no-pie",
       "-nostdlib",
       "-flto",

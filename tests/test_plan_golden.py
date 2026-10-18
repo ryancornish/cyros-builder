@@ -294,6 +294,17 @@ def test_lto_objcopy_uses_the_toolchain_tool():
    assert objcopy.arguments[0] == "my-cross-objcopy", objcopy.arguments[0]
 
 
+def test_lto_merge_carries_the_toolchains_common_flags():
+   """The merge is where LTO generates code, so it must target what the compiles
+   targeted. Without common's -mcpu/-mthumb/-mfpu, arm-none-eabi's merge built
+   for its default core and refused the Cortex-M33 port's FPU instructions."""
+   resolved = resolve_fixture("lto")
+   merge = next(a for a in plan_build(resolved) if isinstance(a, PartialLinkAction))
+   common = resolved.toolchain.flags.common
+   assert common, "the fixture must carry common flags for this to prove anything"
+   assert merge.arguments[1:1 + len(common)] == tuple(common), merge.arguments
+
+
 def test_archive_contains_every_archivable_object_and_nothing_else():
    for profile in ALL_PROFILES:
       resolved = resolve_fixture(profile)

@@ -197,6 +197,8 @@
     "action": "PartialLinkAction",
     "arguments": [
       "g++",
+      "-DBASE",
+      "-DDROP_ME",
       "-no-pie",
       "-nostdlib",
       "-flto",
